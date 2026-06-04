@@ -3,6 +3,7 @@ import { ControllerPreview } from "../components/ControllerPreview";
 import { SkinPanel } from "../components/SkinPanel";
 import { ConfigPanel } from "../components/ConfigPanel";
 import { ControllerConfig, DEFAULT_CONFIG, LayoutOverrides, DEFAULT_OVERRIDES } from "../types/config";
+import { ControllerType, LAYOUTS } from "../lib/layouts";
 import { Gamepad2, Move, Play } from "lucide-react";
 
 export function Studio() {
@@ -15,6 +16,20 @@ export function Studio() {
     setConfig((prev) => ({ ...prev, ...updates }));
   }
 
+  function handleControllerTypeChange(type: ControllerType) {
+    const layout = LAYOUTS[type];
+    setConfig((prev) => ({
+      ...prev,
+      controllerType: type,
+      controllerSkin: layout.defaultSkinUrl,
+      width: layout.defaultWidth,
+      height: layout.defaultHeight,
+      stickTravel: 16,
+    }));
+    setOverrides(DEFAULT_OVERRIDES);
+    setEditMode(false);
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header */}
@@ -25,55 +40,55 @@ export function Studio() {
           </div>
           <span className="font-bold text-sm tracking-tight">Controller Skin Studio</span>
         </div>
-        <span className="text-muted-foreground text-xs border-l border-border pl-3">
+        <span className="text-muted-foreground text-xs border-l border-border pl-3 hidden sm:block">
           Build controller overlays for OBS &amp; Streamlabs
         </span>
+        <div className="ml-auto">
+          <span className="text-[11px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
+            {LAYOUTS[config.controllerType].name}
+          </span>
+        </div>
       </header>
 
       {/* Main layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left panel — Skins */}
+        {/* Left panel */}
         <aside className="w-64 flex-none border-r border-border bg-card/40 overflow-y-auto p-4">
           <SkinPanel config={config} onChange={handleChange} />
         </aside>
 
         {/* Center — Preview */}
         <main className="flex-1 flex flex-col overflow-auto bg-background">
-          <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4">
+          <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
             {/* Mode toggle */}
             <div className="flex items-center gap-2 bg-card border border-border rounded-lg p-1">
               <button
                 onClick={() => setEditMode(false)}
                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-all font-medium ${
-                  !editMode
-                    ? "bg-primary text-primary-foreground shadow"
-                    : "text-muted-foreground hover:text-foreground"
+                  !editMode ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Play size={11} />
-                Preview
+                <Play size={11} /> Preview
               </button>
               <button
                 onClick={() => setEditMode(true)}
                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-all font-medium ${
-                  editMode
-                    ? "bg-primary text-primary-foreground shadow"
-                    : "text-muted-foreground hover:text-foreground"
+                  editMode ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Move size={11} />
-                Edit Layout
+                <Move size={11} /> Edit Layout
               </button>
             </div>
 
-            {/* Preview wrapper */}
-            <div className="w-full max-w-3xl">
+            {/* Preview container */}
+            <div className="w-full max-w-2xl">
               <div
-                className="rounded-xl overflow-hidden shadow-2xl border border-border"
+                className="rounded-xl overflow-hidden shadow-2xl border"
                 style={
                   editMode
-                    ? { border: "2px solid hsl(262 80% 65% / 0.6)" }
+                    ? { borderColor: "hsl(262 80% 65% / 0.6)", borderWidth: "2px" }
                     : {
+                        borderColor: "hsl(var(--border))",
                         backgroundImage:
                           "linear-gradient(45deg, #1a1a2e 25%, transparent 25%), linear-gradient(-45deg, #1a1a2e 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1a1a2e 75%), linear-gradient(-45deg, transparent 75%, #1a1a2e 75%)",
                         backgroundSize: "20px 20px",
@@ -93,19 +108,20 @@ export function Studio() {
 
               <p className="text-center text-[11px] text-muted-foreground mt-3">
                 {editMode
-                  ? "Drag colored markers to reposition buttons · drag corner handle to resize"
-                  : "Live preview — connect a gamepad and press buttons to test"}
+                  ? "Drag colored markers to reposition · corner handle to resize · click Reset to restore defaults"
+                  : "Live preview — connect a gamepad and press buttons to test · triggers fill proportionally to pressure"}
               </p>
             </div>
           </div>
         </main>
 
-        {/* Right panel — Config */}
+        {/* Right panel */}
         <aside className="w-64 flex-none border-l border-border bg-card/40 overflow-y-auto p-4">
           <ConfigPanel
             config={config}
             overrides={overrides}
             onChange={handleChange}
+            onControllerTypeChange={handleControllerTypeChange}
             showButtonLabels={showButtonLabels}
             onToggleLabels={setShowButtonLabels}
           />

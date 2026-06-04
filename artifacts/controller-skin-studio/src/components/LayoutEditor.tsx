@@ -1,16 +1,16 @@
 import { useRef, useState, useCallback } from "react";
-import { XBOX_LAYOUT, BUTTON_COLORS, STICK_COLORS } from "../lib/controllerLayout";
+import { ControllerLayout, buttonHeightPct, STICK_COLORS } from "../lib/controllerLayout";
 import { LayoutOverrides, ButtonOverride, StickOverride } from "../types/config";
 import { RotateCcw } from "lucide-react";
 
 interface Props {
+  layout: ControllerLayout;
   overrides: LayoutOverrides;
   onOverridesChange: (o: LayoutOverrides) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 interface DragState {
-  pointerId: number;
   startClientX: number;
   startClientY: number;
   startX: number;
@@ -31,6 +31,7 @@ interface MarkerProps {
   y: number;
   size: number;
   heightPct: number;
+  borderRadius: string;
   color: string;
   isSelected: boolean;
   onSelect: () => void;
@@ -40,7 +41,7 @@ interface MarkerProps {
 }
 
 function DraggableMarker({
-  label, x, y, size, heightPct, color, isSelected,
+  label, x, y, size, heightPct, borderRadius, color, isSelected,
   onSelect, onMove, onResize, containerRef,
 }: MarkerProps) {
   const markerRef = useRef<HTMLDivElement>(null);
@@ -52,7 +53,6 @@ function DraggableMarker({
     if (!container || !markerRef.current) return;
     const rect = container.getBoundingClientRect();
     dragRef.current = {
-      pointerId: e.pointerId,
       startClientX: e.clientX,
       startClientY: e.clientY,
       startX: x,
@@ -72,8 +72,7 @@ function DraggableMarker({
     const dx = e.clientX - d.startClientX;
     const dy = e.clientY - d.startClientY;
     if (d.isResize) {
-      const delta = (dx / d.containerW) * 100 * 2;
-      const newSize = clamp(d.startSize + delta, 1.5, 25);
+      const newSize = clamp(d.startSize + (dx / d.containerW) * 100 * 2, 1.5, 30);
       onResize(newSize);
     } else {
       onMove(
@@ -83,12 +82,7 @@ function DraggableMarker({
     }
   }, [onMove, onResize]);
 
-  const onPointerUp = useCallback(() => {
-    dragRef.current = null;
-  }, []);
-
-  const isPill = heightPct !== size;
-  const displayH = isPill ? heightPct : size;
+  const onPointerUp = useCallback(() => { dragRef.current = null; }, []);
 
   return (
     <div
@@ -98,7 +92,7 @@ function DraggableMarker({
         left: `${x}%`,
         top: `${y}%`,
         width: `${size}%`,
-        height: `${displayH}%`,
+        height: `${heightPct}%`,
         transform: "translate(-50%, -50%)",
         cursor: "move",
         zIndex: isSelected ? 30 : 10,
@@ -107,44 +101,42 @@ function DraggableMarker({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
-      {/* Marker body */}
       <div
-        className="w-full h-full rounded-full flex items-center justify-center relative"
+        className="w-full h-full flex items-center justify-center relative"
         style={{
+          borderRadius,
           background: `${color}55`,
           border: `2px solid ${color}`,
-          boxShadow: isSelected ? `0 0 0 2px white, 0 0 12px ${color}99` : `0 0 6px ${color}66`,
+          boxShadow: isSelected
+            ? `0 0 0 2px white, 0 0 12px ${color}99`
+            : `0 0 6px ${color}55`,
         }}
       >
         <span
           className="font-bold pointer-events-none leading-none"
-          style={{
-            fontSize: "clamp(5px, 1.1%, 10px)",
-            color: "#fff",
-            textShadow: "0 1px 2px rgba(0,0,0,0.8)",
-          }}
+          style={{ fontSize: "clamp(5px, 1.1%, 10px)", color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.9)" }}
         >
           {label}
         </span>
 
-        {/* Resize handle — bottom right corner */}
+        {/* Resize handle */}
         <div
           className="absolute bottom-0 right-0 rounded-sm"
           style={{
-            width: "clamp(6px, 0.8%, 12px)",
-            height: "clamp(6px, 0.8%, 12px)",
+            width: "clamp(6px, 0.9%, 12px)",
+            height: "clamp(6px, 0.9%, 12px)",
             background: color,
             cursor: "se-resize",
-            opacity: isSelected ? 1 : 0.5,
+            opacity: isSelected ? 1 : 0.4,
           }}
           onPointerDown={(e) => { e.stopPropagation(); startDrag(e, true); }}
         />
       </div>
 
-      {/* Tooltip showing position */}
+      {/* Coordinate tooltip */}
       {isSelected && (
         <div
-          className="absolute -top-5 left-1/2 text-[9px] font-mono bg-black/80 text-white px-1.5 py-0.5 rounded whitespace-nowrap pointer-events-none"
+          className="absolute -top-6 left-1/2 text-[9px] font-mono bg-black/80 text-white px-1.5 py-0.5 rounded whitespace-nowrap pointer-events-none"
           style={{ transform: "translateX(-50%)" }}
         >
           {x.toFixed(1)}, {y.toFixed(1)} · {size.toFixed(1)}%
@@ -154,43 +146,31 @@ function DraggableMarker({
   );
 }
 
-export function LayoutEditor({ overrides, onOverridesChange, containerRef }: Props) {
+export function LayoutEditor({ layout, overrides, onOverridesChange, containerRef }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
 
   function getBtn(idx: number) {
-    const base = XBOX_LAYOUT.buttons[idx];
-    return { ...base, ...(overrides.buttons[base.index] ?? {}) };
+    const base = layout.buttons.find((b) => b.index === idx)!;
+    return { ...base, ...(overrides.buttons[idx] ?? {}) };
   }
 
   function getStick(i: number) {
-    const base = XBOX_LAYOUT.sticks[i];
+    const base = layout.sticks[i];
     return { ...base, ...(overrides.sticks[i] ?? {}) };
   }
 
   function updateButton(idx: number, updates: Partial<ButtonOverride>) {
     onOverridesChange({
       ...overrides,
-      buttons: {
-        ...overrides.buttons,
-        [idx]: { ...(overrides.buttons[idx] ?? {}), ...updates },
-      },
+      buttons: { ...overrides.buttons, [idx]: { ...(overrides.buttons[idx] ?? {}), ...updates } },
     });
   }
 
   function updateStick(i: number, updates: Partial<StickOverride>) {
     onOverridesChange({
       ...overrides,
-      sticks: {
-        ...overrides.sticks,
-        [i]: { ...(overrides.sticks[i] ?? {}), ...updates },
-      },
+      sticks: { ...overrides.sticks, [i]: { ...(overrides.sticks[i] ?? {}), ...updates } },
     });
-  }
-
-  function handleReset(e: React.MouseEvent) {
-    e.stopPropagation();
-    onOverridesChange({ buttons: {}, sticks: {} });
-    setSelected(null);
   }
 
   return (
@@ -199,29 +179,27 @@ export function LayoutEditor({ overrides, onOverridesChange, containerRef }: Pro
       style={{ zIndex: 20 }}
       onClick={() => setSelected(null)}
     >
-      {/* Dimmed overlay hint */}
       <div className="absolute inset-0 bg-black/10 pointer-events-none" />
 
-      {/* Edit mode label */}
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-semibold bg-primary/80 text-primary-foreground px-2 py-0.5 rounded-full pointer-events-none backdrop-blur-sm">
-        Edit Layout — drag markers to reposition, corner to resize
+      {/* Mode label */}
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-semibold bg-primary/80 text-primary-foreground px-2 py-0.5 rounded-full pointer-events-none">
+        Drag markers to reposition · corner handle to resize
       </div>
 
       {/* Reset button */}
       <button
         className="absolute top-2 left-2 flex items-center gap-1 text-[10px] bg-black/60 hover:bg-black/80 text-white px-2 py-1 rounded-md border border-white/20 transition-colors"
-        onClick={handleReset}
+        onClick={(e) => { e.stopPropagation(); onOverridesChange({ buttons: {}, sticks: {} }); setSelected(null); }}
       >
-        <RotateCcw size={10} />
-        Reset
+        <RotateCcw size={10} /> Reset
       </button>
 
       {/* Button markers */}
-      {XBOX_LAYOUT.buttons.map((btn) => {
+      {layout.buttons.map((btn) => {
         const eff = getBtn(btn.index);
-        const isPill = btn.shape === "pill-h" || btn.shape === "pill-v";
-        const heightPct = isPill ? eff.size * 0.45 : eff.size;
+        const hPct = buttonHeightPct(eff);
         const key = `btn-${btn.index}`;
+        const radius = eff.shape === "rect" ? "8px" : eff.shape === "circle" || eff.shape.startsWith("cross") ? "50%" : "9999px";
         return (
           <DraggableMarker
             key={key}
@@ -229,8 +207,9 @@ export function LayoutEditor({ overrides, onOverridesChange, containerRef }: Pro
             x={eff.x}
             y={eff.y}
             size={eff.size}
-            heightPct={heightPct}
-            color={BUTTON_COLORS[btn.index] ?? "#fff"}
+            heightPct={hPct}
+            borderRadius={radius}
+            color={layout.buttonColors[btn.index] ?? "#fff"}
             isSelected={selected === key}
             onSelect={() => setSelected(key)}
             onMove={(x, y) => updateButton(btn.index, { x, y })}
@@ -240,18 +219,19 @@ export function LayoutEditor({ overrides, onOverridesChange, containerRef }: Pro
         );
       })}
 
-      {/* Stick position markers */}
-      {XBOX_LAYOUT.sticks.map((stick, i) => {
+      {/* Stick markers */}
+      {layout.sticks.map((stick, i) => {
         const eff = getStick(i);
         const key = `stick-${i}`;
         return (
           <DraggableMarker
             key={key}
-            label={`${stick.label} pos`}
+            label={`${stick.label} zone`}
             x={eff.x}
             y={eff.y}
             size={eff.size}
             heightPct={eff.size}
+            borderRadius="50%"
             color={STICK_COLORS[i] ?? "#fff"}
             isSelected={selected === key}
             onSelect={() => setSelected(key)}

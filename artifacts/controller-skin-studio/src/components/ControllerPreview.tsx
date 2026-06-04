@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useGamepad } from "../hooks/useGamepad";
-import { XBOX_LAYOUT } from "../lib/controllerLayout";
+import { buttonHeightPct, buttonBorderRadius } from "../lib/controllerLayout";
+import { LAYOUTS } from "../lib/layouts";
 import { ControllerConfig, LayoutOverrides } from "../types/config";
 import { LayoutEditor } from "./LayoutEditor";
 
@@ -16,14 +17,14 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
   const gp = useGamepad();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const layout = XBOX_LAYOUT;
+  const baseLayout = LAYOUTS[config.controllerType] ?? LAYOUTS["xbox-one"];
 
   // Merge overrides into layout
-  const buttons = layout.buttons.map((b) => ({
+  const buttons = baseLayout.buttons.map((b) => ({
     ...b,
     ...(overrides.buttons[b.index] ?? {}),
   }));
-  const sticks = layout.sticks.map((s, i) => ({
+  const sticks = baseLayout.sticks.map((s, i) => ({
     ...s,
     ...(overrides.sticks[i] ?? {}),
   }));
@@ -63,39 +64,49 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         )}
       </div>
 
-      {/* Button overlays (hidden in edit mode so editor markers are visible) */}
+      {/* Button overlays */}
       {!editMode && buttons.map((btn) => {
         const pressed = gp.buttons[btn.index] ?? false;
         const isLt = btn.index === 6;
         const isRt = btn.index === 7;
-        const triggerVal = isLt ? (gp.triggers[0] ?? 0) : isRt ? (gp.triggers[1] ?? 0) : 0;
         const isTrigger = isLt || isRt;
-        const active = pressed || (isTrigger && triggerVal > 0.1);
 
-        const isH = btn.shape === "pill-h";
-        const heightPct = isH ? btn.size * 0.45 : btn.size;
-        const borderRadius =
-          btn.shape === "circle" || btn.shape.startsWith("cross") ? "50%" : "9999px";
+        // Analog trigger: use actual trigger value (0–1) for opacity
+        let activeOpacity = 0;
+        if (isTrigger) {
+          const triggerVal = isLt ? (gp.triggers[0] ?? 0) : (gp.triggers[1] ?? 0);
+          activeOpacity = triggerVal * config.buttonOpacity;
+        } else {
+          activeOpacity = pressed ? config.buttonOpacity : 0;
+        }
+
+        const hPct = buttonHeightPct(btn);
+        const radius = buttonBorderRadius(btn.shape);
 
         return (
           <div
             key={btn.index}
-            className="absolute pointer-events-none flex items-center justify-center transition-opacity duration-[40ms]"
+            className="absolute pointer-events-none flex items-center justify-center"
             style={{
               left: `${btn.x}%`,
               top: `${btn.y}%`,
               width: `${btn.size}%`,
-              height: `${heightPct}%`,
-              borderRadius,
+              height: `${hPct}%`,
+              borderRadius: radius,
               transform: "translate(-50%, -50%)",
               background: config.buttonColor,
-              opacity: active ? config.buttonOpacity : 0,
+              opacity: activeOpacity,
+              transition: isTrigger ? "opacity 0.06s linear" : "opacity 0.04s",
             }}
           >
             {showButtonLabels && (
               <span
-                className="text-[0.4rem] font-bold select-none"
-                style={{ color: "#000", mixBlendMode: "multiply" }}
+                className="font-bold select-none"
+                style={{
+                  fontSize: "clamp(5px, 1%, 9px)",
+                  color: "#000",
+                  mixBlendMode: "multiply",
+                }}
               >
                 {btn.label}
               </span>
@@ -111,7 +122,7 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           left: `${lStick.x}%`,
           top: `${lStick.y}%`,
           width: `${lStick.size}%`,
-          height: `${lStick.size}%`,
+          aspectRatio: "1/1",
           transform: "translate(-50%, -50%)",
         }}
       >
@@ -137,7 +148,7 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           left: `${rStick.x}%`,
           top: `${rStick.y}%`,
           width: `${rStick.size}%`,
-          height: `${rStick.size}%`,
+          aspectRatio: "1/1",
           transform: "translate(-50%, -50%)",
         }}
       >
@@ -156,25 +167,62 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         </div>
       </div>
 
-      {/* Layout Editor overlay */}
+      {/* Trigger fill bars (analog visualization, only in preview mode) */}
+      {!editMode && (
+        <>
+          {/* LT bar */}
+          <div
+            className="absolute bottom-2 left-2 flex items-center gap-1"
+            style={{ opacity: gp.connected ? 1 : 0.25 }}
+          >
+            <span className="text-[9px] text-white/50 font-mono w-5">
+              {config.controllerType === "xbox-one" ? "LT" : "L2"}
+            </span>
+            <div className="w-12 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-orange-400 rounded-full transition-all duration-[60ms]"
+                style={{ width: `${(gp.triggers[0] ?? 0) * 100}%` }}
+              />
+            </div>
+          </div>
+          {/* RT bar */}
+          <div
+            className="absolute bottom-2 right-2 flex items-center gap-1"
+            style={{ opacity: gp.connected ? 1 : 0.25 }}
+          >
+            <div className="w-12 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-orange-400 rounded-full transition-all duration-[60ms]"
+                style={{ width: `${(gp.triggers[1] ?? 0) * 100}%` }}
+              />
+            </div>
+            <span className="text-[9px] text-white/50 font-mono w-5">
+              {config.controllerType === "xbox-one" ? "RT" : "R2"}
+            </span>
+          </div>
+        </>
+      )}
+
+      {/* Layout editor overlay */}
       {editMode && onOverridesChange && (
         <LayoutEditor
+          layout={baseLayout}
           overrides={overrides}
           onOverridesChange={onOverridesChange}
           containerRef={containerRef}
         />
       )}
 
-      {/* Gamepad status badge (hidden in edit mode) */}
+      {/* Gamepad status badge */}
       {!editMode && (
         <div
-          className={`absolute bottom-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-full transition-opacity duration-500 ${
+          className={`absolute top-2 right-2 text-[9px] font-mono px-2 py-0.5 rounded-full transition-all ${
             gp.connected
-              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 opacity-100"
-              : "bg-white/5 text-white/30 border border-white/10 opacity-60"
+              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+              : "bg-white/5 text-white/20 border border-white/10"
           }`}
         >
-          {gp.connected ? `Connected: ${gp.id.slice(0, 30)}` : "No gamepad detected — press a button"}
+          {gp.connected ? "● Connected" : "○ No gamepad"}
         </div>
       )}
     </div>
