@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Controller Skin Studio"
+version = "1.0.0"
+id = "artifacts/controller-skin-studio"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20868
+
+[services.development]
+run = "pnpm --filter @workspace/controller-skin-studio run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/controller-skin-studio", "run", "build" ]
+publicDir = "artifacts/controller-skin-studio/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20868"
+BASE_PATH = "/"
