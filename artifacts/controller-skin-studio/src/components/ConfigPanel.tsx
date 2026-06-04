@@ -7,7 +7,7 @@ interface Props {
   config: ControllerConfig;
   overrides: LayoutOverrides;
   onChange: (updates: Partial<ControllerConfig>) => void;
-  onControllerTypeChange: (type: ControllerConfig["controllerType"]) => void;
+  onResetOverrides: () => void;
   showButtonLabels: boolean;
   onToggleLabels: (v: boolean) => void;
 }
@@ -29,7 +29,7 @@ function LabeledSlider({ label, value, min, max, step, display, onChange }: {
   );
 }
 
-export function ConfigPanel({ config, overrides, onChange, onControllerTypeChange, showButtonLabels, onToggleLabels }: Props) {
+export function ConfigPanel({ config, overrides, onChange, onResetOverrides, showButtonLabels, onToggleLabels }: Props) {
   const layout = LAYOUTS[config.controllerType] ?? LAYOUTS["xbox-one"];
 
   // Thumbstick size in pixels for the current output resolution
@@ -60,7 +60,17 @@ export function ConfigPanel({ config, overrides, onChange, onControllerTypeChang
           {CONTROLLER_TYPES.map((ct) => (
             <button
               key={ct.id}
-              onClick={() => onControllerTypeChange(ct.id)}
+              onClick={() => {
+                const l = LAYOUTS[ct.id];
+                onChange({
+                  controllerType: ct.id,
+                  controllerSkin: l.defaultSkinUrl,
+                  width: l.defaultWidth,
+                  height: l.defaultHeight,
+                  stickTravel: 16,
+                });
+                onResetOverrides();
+              }}
               className={`text-xs py-2 px-1 rounded-md border transition-all font-medium ${
                 config.controllerType === ct.id
                   ? "bg-primary text-primary-foreground border-primary shadow"

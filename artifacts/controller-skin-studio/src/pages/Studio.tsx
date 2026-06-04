@@ -3,7 +3,7 @@ import { ControllerPreview } from "../components/ControllerPreview";
 import { SkinPanel } from "../components/SkinPanel";
 import { ConfigPanel } from "../components/ConfigPanel";
 import { ControllerConfig, DEFAULT_CONFIG, LayoutOverrides, DEFAULT_OVERRIDES } from "../types/config";
-import { ControllerType, LAYOUTS } from "../lib/layouts";
+import { LAYOUTS } from "../lib/layouts";
 import { Gamepad2, Move, Play } from "lucide-react";
 
 export function Studio() {
@@ -16,16 +16,7 @@ export function Studio() {
     setConfig((prev) => ({ ...prev, ...updates }));
   }
 
-  function handleControllerTypeChange(type: ControllerType) {
-    const layout = LAYOUTS[type];
-    setConfig((prev) => ({
-      ...prev,
-      controllerType: type,
-      controllerSkin: layout.defaultSkinUrl,
-      width: layout.defaultWidth,
-      height: layout.defaultHeight,
-      stickTravel: 16,
-    }));
+  function handleResetOverrides() {
     setOverrides(DEFAULT_OVERRIDES);
     setEditMode(false);
   }
@@ -45,7 +36,7 @@ export function Studio() {
         </span>
         <div className="ml-auto">
           <span className="text-[11px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
-            {LAYOUTS[config.controllerType].name}
+            {(LAYOUTS[config.controllerType] ?? LAYOUTS["xbox-one"]).name}
           </span>
         </div>
       </header>
@@ -121,7 +112,7 @@ export function Studio() {
             config={config}
             overrides={overrides}
             onChange={handleChange}
-            onControllerTypeChange={handleControllerTypeChange}
+            onResetOverrides={handleResetOverrides}
             showButtonLabels={showButtonLabels}
             onToggleLabels={setShowButtonLabels}
           />
