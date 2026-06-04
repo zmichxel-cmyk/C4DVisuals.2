@@ -1,21 +1,35 @@
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
 import { useGamepad } from "../hooks/useGamepad";
 import { XBOX_LAYOUT } from "../lib/controllerLayout";
-import { ControllerConfig } from "../types/config";
+import { ControllerConfig, LayoutOverrides } from "../types/config";
+import { LayoutEditor } from "./LayoutEditor";
 
 interface Props {
   config: ControllerConfig;
+  overrides: LayoutOverrides;
   showButtonLabels: boolean;
+  editMode?: boolean;
+  onOverridesChange?: (o: LayoutOverrides) => void;
 }
 
-export function ControllerPreview({ config, showButtonLabels }: Props) {
+export function ControllerPreview({ config, overrides, showButtonLabels, editMode, onOverridesChange }: Props) {
   const gp = useGamepad();
-  const lstickRef = useRef<HTMLImageElement | HTMLDivElement | null>(null);
-  const rstickRef = useRef<HTMLImageElement | HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const layout = XBOX_LAYOUT;
-  const lStick = layout.sticks[0];
-  const rStick = layout.sticks[1];
+
+  // Merge overrides into layout
+  const buttons = layout.buttons.map((b) => ({
+    ...b,
+    ...(overrides.buttons[b.index] ?? {}),
+  }));
+  const sticks = layout.sticks.map((s, i) => ({
+    ...s,
+    ...(overrides.sticks[i] ?? {}),
+  }));
+
+  const lStick = sticks[0];
+  const rStick = sticks[1];
 
   const lx = gp.axes[lStick.axisX] ?? 0;
   const ly = gp.axes[lStick.axisY] ?? 0;
@@ -25,7 +39,11 @@ export function ControllerPreview({ config, showButtonLabels }: Props) {
   const travel = config.stickTravel;
 
   return (
-    <div className="relative w-full" style={{ aspectRatio: `${config.width}/${config.height}` }}>
+    <div
+      ref={containerRef}
+      className="relative w-full"
+      style={{ aspectRatio: `${config.width}/${config.height}` }}
+    >
       {/* Controller background */}
       <div
         className="absolute inset-0"
@@ -33,7 +51,6 @@ export function ControllerPreview({ config, showButtonLabels }: Props) {
           background: config.controllerSkin
             ? `url("${config.controllerSkin}") center/contain no-repeat`
             : undefined,
-          backgroundColor: config.controllerSkin ? "transparent" : undefined,
         }}
       >
         {!config.controllerSkin && (
@@ -46,10 +63,9 @@ export function ControllerPreview({ config, showButtonLabels }: Props) {
         )}
       </div>
 
-      {/* Button overlays */}
-      {layout.buttons.map((btn) => {
+      {/* Button overlays (hidden in edit mode so editor markers are visible) */}
+      {!editMode && buttons.map((btn) => {
         const pressed = gp.buttons[btn.index] ?? false;
-        // LT/RT use triggers
         const isLt = btn.index === 6;
         const isRt = btn.index === 7;
         const triggerVal = isLt ? (gp.triggers[0] ?? 0) : isRt ? (gp.triggers[1] ?? 0) : 0;
@@ -103,16 +119,11 @@ export function ControllerPreview({ config, showButtonLabels }: Props) {
           style={{
             width: "100%",
             height: "100%",
-            transform: `translate(${lx * travel}px, ${ly * travel}px)`,
+            transform: editMode ? undefined : `translate(${lx * travel}px, ${ly * travel}px)`,
           }}
         >
           {config.leftStickSkin ? (
-            <img
-              ref={lstickRef as React.RefObject<HTMLImageElement>}
-              src={config.leftStickSkin}
-              alt="Left stick"
-              className="w-full h-full object-contain"
-            />
+            <img src={config.leftStickSkin} alt="Left stick" className="w-full h-full object-contain" />
           ) : (
             <div className="w-full h-full rounded-full bg-white/10 border border-white/20" />
           )}
@@ -134,32 +145,38 @@ export function ControllerPreview({ config, showButtonLabels }: Props) {
           style={{
             width: "100%",
             height: "100%",
-            transform: `translate(${rx * travel}px, ${ry * travel}px)`,
+            transform: editMode ? undefined : `translate(${rx * travel}px, ${ry * travel}px)`,
           }}
         >
           {config.rightStickSkin ? (
-            <img
-              ref={rstickRef as React.RefObject<HTMLImageElement>}
-              src={config.rightStickSkin}
-              alt="Right stick"
-              className="w-full h-full object-contain"
-            />
+            <img src={config.rightStickSkin} alt="Right stick" className="w-full h-full object-contain" />
           ) : (
             <div className="w-full h-full rounded-full bg-white/10 border border-white/20" />
           )}
         </div>
       </div>
 
-      {/* Gamepad status badge */}
-      <div
-        className={`absolute bottom-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-full transition-opacity duration-500 ${
-          gp.connected
-            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 opacity-100"
-            : "bg-white/5 text-white/30 border border-white/10 opacity-60"
-        }`}
-      >
-        {gp.connected ? `Connected: ${gp.id.slice(0, 30)}` : "No gamepad detected — press a button"}
-      </div>
+      {/* Layout Editor overlay */}
+      {editMode && onOverridesChange && (
+        <LayoutEditor
+          overrides={overrides}
+          onOverridesChange={onOverridesChange}
+          containerRef={containerRef}
+        />
+      )}
+
+      {/* Gamepad status badge (hidden in edit mode) */}
+      {!editMode && (
+        <div
+          className={`absolute bottom-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-full transition-opacity duration-500 ${
+            gp.connected
+              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 opacity-100"
+              : "bg-white/5 text-white/30 border border-white/10 opacity-60"
+          }`}
+        >
+          {gp.connected ? `Connected: ${gp.id.slice(0, 30)}` : "No gamepad detected — press a button"}
+        </div>
+      )}
     </div>
   );
 }

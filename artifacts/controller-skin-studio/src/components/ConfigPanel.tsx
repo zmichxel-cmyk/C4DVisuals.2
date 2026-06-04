@@ -1,22 +1,17 @@
 import { Settings, Download } from "lucide-react";
-import { ControllerConfig } from "../types/config";
+import { ControllerConfig, LayoutOverrides } from "../types/config";
 import { generateExportHtml } from "../lib/exportHtml";
 
 interface Props {
   config: ControllerConfig;
+  overrides: LayoutOverrides;
   onChange: (updates: Partial<ControllerConfig>) => void;
   showButtonLabels: boolean;
   onToggleLabels: (v: boolean) => void;
 }
 
 function LabeledSlider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  display,
-  onChange,
+  label, value, min, max, step, display, onChange,
 }: {
   label: string;
   value: number;
@@ -49,9 +44,9 @@ function LabeledSlider({
   );
 }
 
-export function ConfigPanel({ config, onChange, showButtonLabels, onToggleLabels }: Props) {
+export function ConfigPanel({ config, overrides, onChange, showButtonLabels, onToggleLabels }: Props) {
   function handleExport() {
-    const html = generateExportHtml(config);
+    const html = generateExportHtml(config, overrides);
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -68,7 +63,6 @@ export function ConfigPanel({ config, onChange, showButtonLabels, onToggleLabels
         <span className="text-sm font-semibold">Config</span>
       </div>
 
-      {/* Button color */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           Button Highlight Color
@@ -84,7 +78,6 @@ export function ConfigPanel({ config, onChange, showButtonLabels, onToggleLabels
         </div>
       </div>
 
-      {/* Sliders */}
       <LabeledSlider
         label="Highlight Opacity"
         value={config.buttonOpacity}
@@ -105,7 +98,6 @@ export function ConfigPanel({ config, onChange, showButtonLabels, onToggleLabels
         onChange={(v) => onChange({ stickTravel: v })}
       />
 
-      {/* Output size */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           Output Size
@@ -114,8 +106,8 @@ export function ConfigPanel({ config, onChange, showButtonLabels, onToggleLabels
           {[
             { label: "1280×720", w: 1280, h: 720 },
             { label: "1024×576", w: 1024, h: 576 },
-            { label: "800×450", w: 800, h: 450 },
-            { label: "640×360", w: 640, h: 360 },
+            { label: "800×450",  w: 800,  h: 450 },
+            { label: "640×360",  w: 640,  h: 360 },
           ].map((preset) => (
             <button
               key={preset.label}
@@ -132,7 +124,6 @@ export function ConfigPanel({ config, onChange, showButtonLabels, onToggleLabels
         </div>
       </div>
 
-      {/* Show button labels toggle */}
       <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           Show Button Labels
@@ -151,7 +142,6 @@ export function ConfigPanel({ config, onChange, showButtonLabels, onToggleLabels
         </button>
       </div>
 
-      {/* OBS instructions */}
       <div className="rounded-lg bg-muted/40 border border-border p-3 text-[11px] text-muted-foreground leading-relaxed">
         <p className="font-medium text-foreground/70 mb-1">OBS / Streamlabs setup</p>
         <ol className="space-y-0.5 list-decimal list-inside">
@@ -163,7 +153,6 @@ export function ConfigPanel({ config, onChange, showButtonLabels, onToggleLabels
         </ol>
       </div>
 
-      {/* Export button */}
       <button
         onClick={handleExport}
         className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-primary/25"

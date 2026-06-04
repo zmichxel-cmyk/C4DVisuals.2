@@ -1,28 +1,33 @@
-import { ControllerConfig } from "../types/config";
+import { ControllerConfig, LayoutOverrides } from "../types/config";
 import { XBOX_LAYOUT } from "./controllerLayout";
 
-export function generateExportHtml(config: ControllerConfig): string {
-  const layout = XBOX_LAYOUT;
+export function generateExportHtml(config: ControllerConfig, overrides: LayoutOverrides): string {
+  // Merge overrides into layout
+  const buttons = XBOX_LAYOUT.buttons.map((b) => ({
+    ...b,
+    ...(overrides.buttons[b.index] ?? {}),
+  }));
+  const sticks = XBOX_LAYOUT.sticks.map((s, i) => ({
+    ...s,
+    ...(overrides.sticks[i] ?? {}),
+  }));
 
   const btnColor = config.buttonColor;
   const btnOpacity = config.buttonOpacity;
   const stickTravel = config.stickTravel;
 
-  // Build button style definitions
-  const buttonStyles = layout.buttons
+  const buttonStyles = buttons
     .map((b) => {
-      const w = b.size;
-      const h = b.shape === "pill-h" ? b.size * 0.45 : b.shape === "pill-v" ? b.size * 0.45 : b.size;
+      const isH = b.shape === "pill-h";
+      const hPct = isH ? b.size * 0.45 : b.size;
       const borderRadius =
-        b.shape === "circle" || b.shape.startsWith("cross")
-          ? "50%"
-          : "9999px";
+        b.shape === "circle" || b.shape.startsWith("cross") ? "50%" : "9999px";
       return `
       [data-btn="${b.index}"] {
         left: ${b.x}%;
         top: ${b.y}%;
-        width: ${w}%;
-        height: ${b.shape === "pill-h" ? w * 0.45 : w}%;
+        width: ${b.size}%;
+        height: ${hPct}%;
         border-radius: ${borderRadius};
         transform: translate(-50%, -50%);
         background: ${btnColor};
@@ -37,6 +42,9 @@ export function generateExportHtml(config: ControllerConfig): string {
     ? `url("${config.controllerSkin}") center/contain no-repeat`
     : "none";
 
+  const lStick = sticks[0];
+  const rStick = sticks[1];
+
   const leftStickImg = config.leftStickSkin
     ? `<img src="${config.leftStickSkin}" class="stick-img" id="lstick-img" />`
     : `<div class="stick-fallback" id="lstick-img"></div>`;
@@ -45,10 +53,7 @@ export function generateExportHtml(config: ControllerConfig): string {
     ? `<img src="${config.rightStickSkin}" class="stick-img" id="rstick-img" />`
     : `<div class="stick-fallback" id="rstick-img"></div>`;
 
-  const lStick = layout.sticks[0];
-  const rStick = layout.sticks[1];
-
-  const buttonsHtml = layout.buttons
+  const buttonsHtml = buttons
     .map((b) => `<div class="btn-overlay" data-btn="${b.index}"></div>`)
     .join("\n      ");
 
@@ -162,7 +167,6 @@ export function generateExportHtml(config: ControllerConfig): string {
 
     badge.style.display = 'block';
 
-    // Buttons
     var btns = document.querySelectorAll('.btn-overlay');
     for (var b = 0; b < btns.length; b++) {
       var idx = parseInt(btns[b].getAttribute('data-btn'));
@@ -170,7 +174,6 @@ export function generateExportHtml(config: ControllerConfig): string {
       btns[b].classList.toggle('pressed', pressed);
     }
 
-    // Sticks
     var lx = dead(gp.axes[0] || 0);
     var ly = dead(gp.axes[1] || 0);
     var rx = dead(gp.axes[2] || 0);
