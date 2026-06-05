@@ -15,6 +15,8 @@ export const ps4Layout: ControllerLayout = {
   defaultRightStickUrl: "/sticks/ps4-right.png",
   defaultWidth: 1024,
   defaultHeight: 1024,
+  skinWidth: 1319,
+  skinHeight: 1080,
 
   buttonColors: {
     0:  PS.cross,

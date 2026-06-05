@@ -8,6 +8,8 @@ export const xboxOneLayout: ControllerLayout = {
   defaultRightStickUrl: "/sticks/xbox-right.png",
   defaultWidth: 1024,
   defaultHeight: 1024,
+  skinWidth: 1337,
+  skinHeight: 1080,
 
   buttonColors: {
     0:  "#22c55e", // A - green

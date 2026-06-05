@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useGamepad } from "../hooks/useGamepad";
 import { hexToRgba } from "../lib/controllerLayout";
 import { LAYOUTS } from "../lib/layouts";
@@ -16,6 +16,19 @@ interface Props {
 export function ControllerPreview({ config, overrides, showButtonLabels, editMode, onOverridesChange }: Props) {
   const gp = useGamepad();
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Track the container's rendered CSS size so we can compute mask scaling
+  const [cssSize, setCssSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      setCssSize({ w: width, h: height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const baseLayout = LAYOUTS[config.controllerType] ?? LAYOUTS["xbox-one"];
 
@@ -37,6 +50,35 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
 
   const ltLabel = config.controllerType === "xbox-one" ? "LT" : "L2";
   const rtLabel = config.controllerType === "xbox-one" ? "RT" : "R2";
+
+  // Compute how the controller skin renders inside the container (background-size: contain)
+  const { skinWidth, skinHeight } = baseLayout;
+  const { w: cW, h: cH } = cssSize;
+  const scale = cW > 0 && cH > 0 ? Math.min(cW / skinWidth, cH / skinHeight) : 0;
+  const renderedImgW = skinWidth * scale;   // mask image rendered width in CSS px
+  const renderedImgH = skinHeight * scale;  // mask image rendered height in CSS px
+
+  // For each mask button we position the wrapper div at btn.x%, btn.y%
+  // and compute mask-position so the button shape from the template is
+  // always centred inside the wrapper — regardless of where the wrapper is dragged.
+  function maskStyle(btn: typeof buttons[number], hPct: number, maskUrl: string, maskCx: number, maskCy: number) {
+    if (scale === 0) return {};   // wait for first ResizeObserver tick
+    const elW = (btn.size / 100) * cW;   // element width in CSS px
+    const elH = (hPct   / 100) * cH;    // element height in CSS px
+    // Offset the mask image so the button's shape centre aligns with the element centre
+    const mpX = elW / 2 - (maskCx / 100) * renderedImgW;
+    const mpY = elH / 2 - (maskCy / 100) * renderedImgH;
+    return {
+      WebkitMaskImage: `url(${maskUrl})`,
+      maskImage: `url(${maskUrl})`,
+      WebkitMaskSize: `${renderedImgW}px ${renderedImgH}px`,
+      maskSize: `${renderedImgW}px ${renderedImgH}px`,
+      WebkitMaskPosition: `${mpX}px ${mpY}px`,
+      maskPosition: `${mpX}px ${mpY}px`,
+      WebkitMaskRepeat: "no-repeat",
+      maskRepeat: "no-repeat",
+    };
+  }
 
   return (
     <div
@@ -63,15 +105,19 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         )}
       </div>
 
-      {/* Button overlays — one full-size masked div per button */}
-      {!editMode && buttons.map((btn) => {
+      {/* Button overlays */}
+      {buttons.map((btn) => {
         const isLt = btn.index === 6;
         const isRt = btn.index === 7;
         const isTrigger = isLt || isRt;
         const pressed = gp.buttons[btn.index] ?? false;
+        const maskDef = baseLayout.buttonMasks[btn.index];
 
+        // Opacity: live only in preview, faint guide in edit mode
         let activeOpacity = 0;
-        if (isTrigger) {
+        if (editMode) {
+          activeOpacity = maskDef ? 0.18 : 0; // show shape guides in edit mode
+        } else if (isTrigger) {
           const tv = isLt ? (gp.triggers[0] ?? 0) : (gp.triggers[1] ?? 0);
           activeOpacity = tv * config.buttonOpacity;
         } else {
@@ -82,50 +128,26 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           ? (baseLayout.buttonColors[btn.index] ?? config.buttonColor)
           : config.buttonColor;
 
-        const maskDef = baseLayout.buttonMasks[btn.index];
+        // Height for pill/rect shapes
+        const hPct = btn.shape === "pill-h" || btn.shape === "rect" ? btn.size * 0.45 : btn.size;
 
-        // Gradient background (inner fade uses button center from mask metadata)
-        const gradCx = maskDef ? maskDef.cx : 50;
-        const gradCy = maskDef ? maskDef.cy : 50;
+        // Inner fade: for mask buttons the shape is centred in the element, so gradient at 50%/50%
+        const gradCx = maskDef ? 50 : 50;
+        const gradCy = maskDef ? 50 : 50;
         const bg = config.innerFade
           ? `radial-gradient(circle at ${gradCx}% ${gradCy}%, ${effectiveColor} 0%, ${hexToRgba(effectiveColor, 0.5)} 45%, transparent 100%)`
           : effectiveColor;
 
-        // Glow via drop-shadow (follows mask contour unlike box-shadow)
-        const glowFilter = (config.glowEnabled && activeOpacity > 0.01)
+        const glowFilter = (!editMode && config.glowEnabled && activeOpacity > 0.01)
           ? `drop-shadow(0 0 ${config.glowSize}px ${hexToRgba(effectiveColor, 0.9)}) drop-shadow(0 0 ${config.glowSize * 2}px ${hexToRgba(effectiveColor, 0.45)})`
           : "none";
 
-        const transitionProp = isTrigger
+        const transitionProp = editMode
+          ? "none"
+          : isTrigger
           ? "opacity 0.06s linear, filter 0.06s linear"
           : "opacity 0.04s, filter 0.04s";
 
-        if (maskDef) {
-          // ── Exact-shape overlay using template mask ──────────────────────────
-          return (
-            <div
-              key={btn.index}
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background: bg,
-                WebkitMaskImage: `url(${maskDef.url})`,
-                maskImage: `url(${maskDef.url})`,
-                WebkitMaskSize: "contain",
-                maskSize: "contain",
-                WebkitMaskPosition: "center",
-                maskPosition: "center",
-                WebkitMaskRepeat: "no-repeat",
-                maskRepeat: "no-repeat",
-                opacity: activeOpacity,
-                filter: glowFilter,
-                transition: transitionProp,
-              }}
-            />
-          );
-        }
-
-        // ── Geometric fallback (no mask defined) ─────────────────────────────
-        const hPct = btn.shape === "pill-h" || btn.shape === "rect" ? btn.size * 0.45 : btn.size;
         const borderRadius =
           btn.shape === "circle" || btn.shape.startsWith("cross")
             ? "50%"
@@ -136,22 +158,27 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         return (
           <div
             key={btn.index}
-            className="absolute pointer-events-none flex items-center justify-center"
+            className="absolute pointer-events-none"
             style={{
               left: `${btn.x}%`,
               top: `${btn.y}%`,
               width: `${btn.size}%`,
               height: `${hPct}%`,
-              borderRadius,
               transform: "translate(-50%, -50%)",
+              borderRadius: maskDef ? undefined : borderRadius,
               background: bg,
               opacity: activeOpacity,
               filter: glowFilter,
               transition: transitionProp,
+              ...(maskDef ? maskStyle(btn, hPct, maskDef.url, maskDef.cx, maskDef.cy) : {}),
             }}
           >
-            {showButtonLabels && (
-              <span className="font-bold select-none" style={{ fontSize: "clamp(5px,1%,9px)", color: "#000", mixBlendMode: "multiply" }}>
+            {/* Label only shown for geometric (non-mask) buttons when labels are on */}
+            {showButtonLabels && !maskDef && (
+              <span
+                className="absolute inset-0 flex items-center justify-center font-bold select-none"
+                style={{ fontSize: "clamp(5px,1%,9px)", color: "#000", mixBlendMode: "multiply" }}
+              >
                 {btn.label}
               </span>
             )}
@@ -205,7 +232,7 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         </div>
       </div>
 
-      {/* Trigger pressure bars */}
+      {/* Trigger pressure bars (preview only) */}
       {!editMode && (
         <>
           <div className="absolute bottom-2 left-2 flex items-center gap-1.5" style={{ opacity: gp.connected ? 1 : 0.2 }}>
@@ -231,7 +258,7 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         </>
       )}
 
-      {/* Layout editor overlay */}
+      {/* Layout editor overlay (on top of button guides) */}
       {editMode && onOverridesChange && (
         <LayoutEditor
           layout={baseLayout}
@@ -241,7 +268,7 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         />
       )}
 
-      {/* Connection status badge */}
+      {/* Connection status badge (preview only) */}
       {!editMode && (
         <div
           className={`absolute top-2 right-2 text-[9px] font-mono px-2 py-0.5 rounded-full border transition-all ${

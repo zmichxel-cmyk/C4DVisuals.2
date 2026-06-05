@@ -31,6 +31,9 @@ export interface ControllerLayout {
   defaultRightStickUrl: string;
   defaultWidth: number;
   defaultHeight: number;
+  /** Native pixel dimensions of the controller skin image (for mask scaling math) */
+  skinWidth: number;
+  skinHeight: number;
   buttonColors: Record<number, string>;
   buttonMasks: Record<number, ButtonMaskDef>;
   buttons: ButtonDef[];

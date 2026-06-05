@@ -15,6 +15,8 @@ export const ps5Layout: ControllerLayout = {
   defaultRightStickUrl: "/sticks/ps5-right.png",
   defaultWidth: 1024,
   defaultHeight: 1024,
+  skinWidth: 1352,
+  skinHeight: 1080,
 
   buttonColors: {
     0:  PS.cross,
