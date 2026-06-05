@@ -4,11 +4,16 @@ export type { ControllerType };
 
 export interface ControllerConfig {
   controllerType: ControllerType;
+  overlayName: string;
   controllerSkin: string | null;
   leftStickSkin: string | null;
   rightStickSkin: string | null;
   buttonColor: string;
   buttonOpacity: number;
+  usePerButtonColors: boolean;
+  glowEnabled: boolean;
+  glowSize: number;
+  innerFade: boolean;
   stickTravel: number;
   width: number;
   height: number;
@@ -16,11 +21,16 @@ export interface ControllerConfig {
 
 export const DEFAULT_CONFIG: ControllerConfig = {
   controllerType: "xbox-one",
-  controllerSkin: "/xbox-one-default.png",
-  leftStickSkin: null,
-  rightStickSkin: null,
+  overlayName: "My Controller",
+  controllerSkin: "/skins/xbox-one-base.png",
+  leftStickSkin: "/sticks/xbox-left.png",
+  rightStickSkin: "/sticks/xbox-right.png",
   buttonColor: "#ffffff",
-  buttonOpacity: 0.6,
+  buttonOpacity: 0.65,
+  usePerButtonColors: false,
+  glowEnabled: true,
+  glowSize: 14,
+  innerFade: false,
   stickTravel: 16,
   width: 1024,
   height: 1024,

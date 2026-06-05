@@ -2,7 +2,10 @@ import { ControllerLayout } from "../controllerLayout";
 
 export const xboxOneLayout: ControllerLayout = {
   name: "Xbox One",
-  defaultSkinUrl: "/xbox-one-default.png",
+  connectMessage: "Connect Xbox Controller",
+  defaultSkinUrl: "/skins/xbox-one-base.png",
+  defaultLeftStickUrl: "/sticks/xbox-left.png",
+  defaultRightStickUrl: "/sticks/xbox-right.png",
   defaultWidth: 1024,
   defaultHeight: 1024,
   buttonColors: {
@@ -26,37 +29,27 @@ export const xboxOneLayout: ControllerLayout = {
     17: "#94a3b8", // Share
   },
   buttons: [
-    // Face buttons (upper right cluster — Xbox layout)
-    { index: 0,  label: "A",    x: 73,   y: 53,   size: 5.5, shape: "circle" },
-    { index: 1,  label: "B",    x: 81,   y: 46,   size: 5.5, shape: "circle" },
-    { index: 2,  label: "X",    x: 65,   y: 46,   size: 5.5, shape: "circle" },
-    { index: 3,  label: "Y",    x: 73,   y: 39,   size: 5.5, shape: "circle" },
-    // Bumpers
-    { index: 4,  label: "LB",   x: 23,   y: 27,   size: 11,  shape: "pill-h" },
-    { index: 5,  label: "RB",   x: 74,   y: 27,   size: 11,  shape: "pill-h" },
-    // Triggers
-    { index: 6,  label: "LT",   x: 22,   y: 13,   size: 12,  shape: "pill-h" },
-    { index: 7,  label: "RT",   x: 76,   y: 13,   size: 12,  shape: "pill-h" },
-    // Center buttons
-    { index: 8,  label: "View", x: 40,   y: 44,   size: 4.5, shape: "circle" },
-    { index: 9,  label: "Menu", x: 57,   y: 44,   size: 4.5, shape: "circle" },
-    // Stick press (overlaid on stick positions)
-    { index: 10, label: "LS",   x: 33,   y: 47,   size: 4.5, shape: "circle" },
-    { index: 11, label: "RS",   x: 62,   y: 67,   size: 4.5, shape: "circle" },
-    // D-pad (lower left — Xbox specific)
-    { index: 12, label: "↑",    x: 26,   y: 59,   size: 4,   shape: "cross-up"    },
-    { index: 13, label: "↓",    x: 26,   y: 75,   size: 4,   shape: "cross-down"  },
-    { index: 14, label: "←",    x: 18,   y: 67,   size: 4,   shape: "cross-left"  },
-    { index: 15, label: "→",    x: 34,   y: 67,   size: 4,   shape: "cross-right" },
-    // Home
-    { index: 16, label: "⊙",    x: 49,   y: 32,   size: 8,   shape: "circle" },
-    // Share (newer Xbox One)
-    { index: 17, label: "Share", x: 49,  y: 52,   size: 4,   shape: "circle" },
+    { index: 0,  label: "A",     x: 73,   y: 53,   size: 5.5, shape: "circle" },
+    { index: 1,  label: "B",     x: 81,   y: 46,   size: 5.5, shape: "circle" },
+    { index: 2,  label: "X",     x: 65,   y: 46,   size: 5.5, shape: "circle" },
+    { index: 3,  label: "Y",     x: 73,   y: 39,   size: 5.5, shape: "circle" },
+    { index: 4,  label: "LB",    x: 23,   y: 27,   size: 11,  shape: "pill-h" },
+    { index: 5,  label: "RB",    x: 74,   y: 27,   size: 11,  shape: "pill-h" },
+    { index: 6,  label: "LT",    x: 22,   y: 13,   size: 12,  shape: "pill-h" },
+    { index: 7,  label: "RT",    x: 76,   y: 13,   size: 12,  shape: "pill-h" },
+    { index: 8,  label: "View",  x: 40,   y: 44,   size: 4.5, shape: "circle" },
+    { index: 9,  label: "Menu",  x: 57,   y: 44,   size: 4.5, shape: "circle" },
+    { index: 10, label: "LS",    x: 33,   y: 47,   size: 4.5, shape: "circle" },
+    { index: 11, label: "RS",    x: 62,   y: 67,   size: 4.5, shape: "circle" },
+    { index: 12, label: "↑",     x: 26,   y: 59,   size: 4,   shape: "cross-up"    },
+    { index: 13, label: "↓",     x: 26,   y: 75,   size: 4,   shape: "cross-down"  },
+    { index: 14, label: "←",     x: 18,   y: 67,   size: 4,   shape: "cross-left"  },
+    { index: 15, label: "→",     x: 34,   y: 67,   size: 4,   shape: "cross-right" },
+    { index: 16, label: "⊙",     x: 49,   y: 32,   size: 8,   shape: "circle" },
+    { index: 17, label: "Share", x: 49,   y: 52,   size: 4,   shape: "circle" },
   ],
   sticks: [
-    // Left stick upper-left (Xbox specific!)
     { axisX: 0, axisY: 1, label: "LS", x: 33, y: 47, size: 13, travel: 16 },
-    // Right stick lower-right
     { axisX: 2, axisY: 3, label: "RS", x: 62, y: 67, size: 13, travel: 16 },
   ],
 };

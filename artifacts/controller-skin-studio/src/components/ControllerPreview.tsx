@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useGamepad } from "../hooks/useGamepad";
-import { buttonHeightPct, buttonBorderRadius } from "../lib/controllerLayout";
+import { buttonHeightPct, buttonBorderRadius, hexToRgba } from "../lib/controllerLayout";
 import { LAYOUTS } from "../lib/layouts";
 import { ControllerConfig, LayoutOverrides } from "../types/config";
 import { LayoutEditor } from "./LayoutEditor";
@@ -19,7 +19,6 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
 
   const baseLayout = LAYOUTS[config.controllerType] ?? LAYOUTS["xbox-one"];
 
-  // Merge overrides into layout
   const buttons = baseLayout.buttons.map((b) => ({
     ...b,
     ...(overrides.buttons[b.index] ?? {}),
@@ -31,13 +30,13 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
 
   const lStick = sticks[0];
   const rStick = sticks[1];
-
   const lx = gp.axes[lStick.axisX] ?? 0;
   const ly = gp.axes[lStick.axisY] ?? 0;
   const rx = gp.axes[rStick.axisX] ?? 0;
   const ry = gp.axes[rStick.axisY] ?? 0;
 
-  const travel = config.stickTravel;
+  const ltLabel = config.controllerType === "xbox-one" ? "LT" : "L2";
+  const rtLabel = config.controllerType === "xbox-one" ? "RT" : "R2";
 
   return (
     <div
@@ -71,17 +70,28 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         const isRt = btn.index === 7;
         const isTrigger = isLt || isRt;
 
-        // Analog trigger: use actual trigger value (0–1) for opacity
         let activeOpacity = 0;
         if (isTrigger) {
-          const triggerVal = isLt ? (gp.triggers[0] ?? 0) : (gp.triggers[1] ?? 0);
-          activeOpacity = triggerVal * config.buttonOpacity;
+          const tv = isLt ? (gp.triggers[0] ?? 0) : (gp.triggers[1] ?? 0);
+          activeOpacity = tv * config.buttonOpacity;
         } else {
           activeOpacity = pressed ? config.buttonOpacity : 0;
         }
 
+        const effectiveColor = config.usePerButtonColors
+          ? (baseLayout.buttonColors[btn.index] ?? config.buttonColor)
+          : config.buttonColor;
+
         const hPct = buttonHeightPct(btn);
         const radius = buttonBorderRadius(btn.shape);
+
+        const bg = config.innerFade
+          ? `radial-gradient(circle at center, ${hexToRgba(effectiveColor, 1)} 0%, ${hexToRgba(effectiveColor, 0.55)} 45%, transparent 100%)`
+          : effectiveColor;
+
+        const shadow = (config.glowEnabled && activeOpacity > 0.01)
+          ? `0 0 ${config.glowSize}px ${hexToRgba(effectiveColor, 0.9)}, 0 0 ${config.glowSize * 2}px ${hexToRgba(effectiveColor, 0.4)}`
+          : "none";
 
         return (
           <div
@@ -94,14 +104,15 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
               height: `${hPct}%`,
               borderRadius: radius,
               transform: "translate(-50%, -50%)",
-              background: config.buttonColor,
+              background: bg,
               opacity: activeOpacity,
-              transition: isTrigger ? "opacity 0.06s linear" : "opacity 0.04s",
+              boxShadow: shadow,
+              transition: isTrigger ? "opacity 0.06s linear" : "opacity 0.04s, box-shadow 0.04s",
             }}
           >
             {showButtonLabels && (
               <span
-                className="font-bold select-none"
+                className="font-bold select-none pointer-events-none"
                 style={{
                   fontSize: "clamp(5px, 1%, 9px)",
                   color: "#000",
@@ -130,7 +141,8 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           style={{
             width: "100%",
             height: "100%",
-            transform: editMode ? undefined : `translate(${lx * travel}px, ${ly * travel}px)`,
+            transform: editMode ? undefined : `translate(${lx * config.stickTravel}px, ${ly * config.stickTravel}px)`,
+            transition: "transform 0.03s",
           }}
         >
           {config.leftStickSkin ? (
@@ -156,7 +168,8 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           style={{
             width: "100%",
             height: "100%",
-            transform: editMode ? undefined : `translate(${rx * travel}px, ${ry * travel}px)`,
+            transform: editMode ? undefined : `translate(${rx * config.stickTravel}px, ${ry * config.stickTravel}px)`,
+            transition: "transform 0.03s",
           }}
         >
           {config.rightStickSkin ? (
@@ -167,38 +180,28 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         </div>
       </div>
 
-      {/* Trigger fill bars (analog visualization, only in preview mode) */}
+      {/* Trigger pressure bars */}
       {!editMode && (
         <>
-          {/* LT bar */}
-          <div
-            className="absolute bottom-2 left-2 flex items-center gap-1"
-            style={{ opacity: gp.connected ? 1 : 0.25 }}
-          >
-            <span className="text-[9px] text-white/50 font-mono w-5">
-              {config.controllerType === "xbox-one" ? "LT" : "L2"}
-            </span>
-            <div className="w-12 h-1.5 bg-white/10 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-orange-400 rounded-full transition-all duration-[60ms]"
-                style={{ width: `${(gp.triggers[0] ?? 0) * 100}%` }}
-              />
+          <div className="absolute bottom-2 left-2 flex items-center gap-1.5" style={{ opacity: gp.connected ? 1 : 0.2 }}>
+            <span className="text-[9px] text-white/50 font-mono w-5">{ltLabel}</span>
+            <div className="w-14 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full bg-orange-400 rounded-full transition-all duration-[60ms]"
+                style={{ width: `${(gp.triggers[0] ?? 0) * 100}%` }} />
             </div>
+            <span className="text-[9px] text-white/40 font-mono w-5 text-right">
+              {Math.round((gp.triggers[0] ?? 0) * 100)}
+            </span>
           </div>
-          {/* RT bar */}
-          <div
-            className="absolute bottom-2 right-2 flex items-center gap-1"
-            style={{ opacity: gp.connected ? 1 : 0.25 }}
-          >
-            <div className="w-12 h-1.5 bg-white/10 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-orange-400 rounded-full transition-all duration-[60ms]"
-                style={{ width: `${(gp.triggers[1] ?? 0) * 100}%` }}
-              />
-            </div>
-            <span className="text-[9px] text-white/50 font-mono w-5">
-              {config.controllerType === "xbox-one" ? "RT" : "R2"}
+          <div className="absolute bottom-2 right-2 flex items-center gap-1.5" style={{ opacity: gp.connected ? 1 : 0.2 }}>
+            <span className="text-[9px] text-white/40 font-mono w-5">
+              {Math.round((gp.triggers[1] ?? 0) * 100)}
             </span>
+            <div className="w-14 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full bg-orange-400 rounded-full transition-all duration-[60ms]"
+                style={{ width: `${(gp.triggers[1] ?? 0) * 100}%` }} />
+            </div>
+            <span className="text-[9px] text-white/50 font-mono w-5">{rtLabel}</span>
           </div>
         </>
       )}
@@ -213,16 +216,16 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         />
       )}
 
-      {/* Gamepad status badge */}
+      {/* Connection status badge */}
       {!editMode && (
         <div
-          className={`absolute top-2 right-2 text-[9px] font-mono px-2 py-0.5 rounded-full transition-all ${
+          className={`absolute top-2 right-2 text-[9px] font-mono px-2 py-0.5 rounded-full border transition-all ${
             gp.connected
-              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-              : "bg-white/5 text-white/20 border border-white/10"
+              ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+              : "bg-black/40 text-white/25 border-white/10"
           }`}
         >
-          {gp.connected ? "● Connected" : "○ No gamepad"}
+          {gp.connected ? "● Connected" : `○ ${baseLayout.connectMessage}`}
         </div>
       )}
     </div>
