@@ -15,6 +15,7 @@ export const ps4Layout: ControllerLayout = {
   defaultRightStickUrl: "/sticks/ps4-right.png",
   defaultWidth: 1024,
   defaultHeight: 1024,
+
   buttonColors: {
     0:  PS.cross,
     1:  PS.circle,
@@ -35,6 +36,28 @@ export const ps4Layout: ControllerLayout = {
     16: "#3b82f6",
     17: "#8b5cf6",
   },
+
+  buttonMasks: {
+    0:  { url: "/masks/ps4-btn-14.png", cx: 79.5, cy: 50.4 },
+    1:  { url: "/masks/ps4-btn-10.png", cx: 86.6, cy: 41.7 },
+    2:  { url: "/masks/ps4-btn-9.png",  cx: 72.4, cy: 41.7 },
+    3:  { url: "/masks/ps4-btn-7.png",  cx: 79.4, cy: 33.0 },
+    4:  { url: "/masks/ps4-btn-2.png",  cx: 21.4, cy: 22.1 },
+    5:  { url: "/masks/ps4-btn-3.png",  cx: 78.5, cy: 22.1 },
+    6:  { url: "/masks/ps4-btn-1.png",  cx: 22.8, cy: 9.8  },
+    7:  { url: "/masks/ps4-btn-0.png",  cx: 77.5, cy: 9.8  },
+    8:  { url: "/masks/ps4-btn-5.png",  cx: 30.8, cy: 29.8 },
+    9:  { url: "/masks/ps4-btn-6.png",  cx: 68.9, cy: 29.9 },
+    10: { url: "/masks/ps4-btn-15.png", cx: 34.6, cy: 58.1 },
+    11: { url: "/masks/ps4-btn-16.png", cx: 65.2, cy: 58.0 },
+    12: { url: "/masks/ps4-btn-8.png",  cx: 20.4, cy: 35.3 },
+    13: { url: "/masks/ps4-btn-13.png", cx: 20.4, cy: 47.7 },
+    14: { url: "/masks/ps4-btn-11.png", cx: 15.5, cy: 41.5 },
+    15: { url: "/masks/ps4-btn-12.png", cx: 25.4, cy: 41.5 },
+    16: { url: "/masks/ps4-btn-17.png", cx: 50.0, cy: 59.4 },
+    17: { url: "/masks/ps4-btn-4.png",  cx: 49.9, cy: 35.0 },
+  },
+
   buttons: [
     { index: 0,  label: "✕",     x: 77,   y: 50,   size: 5.5, shape: "circle" },
     { index: 1,  label: "○",     x: 84,   y: 43,   size: 5.5, shape: "circle" },

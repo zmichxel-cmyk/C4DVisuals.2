@@ -17,6 +17,12 @@ export interface StickDef {
   travel: number;
 }
 
+export interface ButtonMaskDef {
+  url: string;
+  cx: number;
+  cy: number;
+}
+
 export interface ControllerLayout {
   name: string;
   connectMessage: string;
@@ -26,6 +32,7 @@ export interface ControllerLayout {
   defaultWidth: number;
   defaultHeight: number;
   buttonColors: Record<number, string>;
+  buttonMasks: Record<number, ButtonMaskDef>;
   buttons: ButtonDef[];
   sticks: StickDef[];
 }

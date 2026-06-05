@@ -1,4 +1,5 @@
-import { Settings, Download, Gamepad2, Zap, Layers, Palette, Tag } from "lucide-react";
+import { useState } from "react";
+import { Settings, Download, Gamepad2, Zap, Palette, Tag, Loader2 } from "lucide-react";
 import { ControllerConfig, LayoutOverrides } from "../types/config";
 import { CONTROLLER_TYPES, LAYOUTS } from "../lib/layouts";
 import { generateExportHtml } from "../lib/exportHtml";
@@ -53,22 +54,28 @@ function SectionHeader({ icon: Icon, title }: { icon: React.ComponentType<{ size
 }
 
 export function ConfigPanel({ config, overrides, onChange, onResetOverrides, showButtonLabels, onToggleLabels }: Props) {
+  const [exporting, setExporting] = useState(false);
   const layout = LAYOUTS[config.controllerType] ?? LAYOUTS["xbox-one"];
 
   const lStickBase = layout.sticks[0];
   const lStickEff = { ...lStickBase, ...(overrides.sticks[0] ?? {}) };
   const stickSizePx = Math.round(config.width * lStickEff.size / 100);
 
-  function handleExport() {
-    const html = generateExportHtml(config, overrides);
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const safeName = (config.overlayName || "overlay").replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
-    a.download = `${safeName}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const html = await generateExportHtml(config, overrides);
+      const blob = new Blob([html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safeName = (config.overlayName || "overlay").replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
+      a.download = `${safeName}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -123,7 +130,6 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
       <div className="space-y-3">
         <SectionHeader icon={Palette} title="Appearance" />
 
-        {/* Color */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="text-xs text-muted-foreground">Highlight Color</label>
@@ -155,7 +161,6 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
       {/* Effects */}
       <div className="space-y-3">
         <SectionHeader icon={Zap} title="Effects" />
-
         <Toggle label="Glow" value={config.glowEnabled} onChange={(v) => onChange({ glowEnabled: v })} />
         {config.glowEnabled && (
           <LabeledSlider label="Glow spread" value={config.glowSize}
@@ -163,7 +168,6 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
             display={`${config.glowSize}px`}
             onChange={(v) => onChange({ glowSize: v })} />
         )}
-
         <Toggle label="Inner fade (radial gradient)" value={config.innerFade} onChange={(v) => onChange({ innerFade: v })} />
       </div>
 
@@ -176,7 +180,6 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
           display={`${config.stickTravel}px`}
           onChange={(v) => onChange({ stickTravel: v })} />
 
-        {/* Output size */}
         <div className="space-y-1.5">
           <label className="text-xs text-muted-foreground">Output Size</label>
           <div className="grid grid-cols-2 gap-1.5">
@@ -200,7 +203,6 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
           </div>
         </div>
 
-        {/* Thumbstick size callout */}
         <div className="rounded-lg bg-primary/10 border border-primary/25 p-2.5 space-y-0.5">
           <p className="text-[10px] font-semibold text-primary">Thumbstick Image Size</p>
           <p className="text-sm font-mono font-bold">{stickSizePx} × {stickSizePx} px</p>
@@ -224,10 +226,13 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
         </ol>
       </div>
 
-      <button onClick={handleExport}
-        className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-primary/30">
-        <Download size={15} />
-        Export HTML for OBS
+      <button
+        onClick={handleExport}
+        disabled={exporting}
+        className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-primary/30 disabled:opacity-60 disabled:cursor-wait"
+      >
+        {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+        {exporting ? "Embedding assets…" : "Export HTML for OBS"}
       </button>
     </div>
   );

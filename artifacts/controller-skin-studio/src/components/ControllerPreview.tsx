@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useGamepad } from "../hooks/useGamepad";
-import { buttonHeightPct, buttonBorderRadius, hexToRgba } from "../lib/controllerLayout";
+import { hexToRgba } from "../lib/controllerLayout";
 import { LAYOUTS } from "../lib/layouts";
 import { ControllerConfig, LayoutOverrides } from "../types/config";
 import { LayoutEditor } from "./LayoutEditor";
@@ -57,18 +57,18 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center text-muted-foreground">
               <div className="text-5xl mb-2 opacity-20">🎮</div>
-              <p className="text-sm opacity-50">Upload a controller skin to preview</p>
+              <p className="text-sm opacity-50">Upload a controller skin</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Button overlays */}
+      {/* Button overlays — one full-size masked div per button */}
       {!editMode && buttons.map((btn) => {
-        const pressed = gp.buttons[btn.index] ?? false;
         const isLt = btn.index === 6;
         const isRt = btn.index === 7;
         const isTrigger = isLt || isRt;
+        const pressed = gp.buttons[btn.index] ?? false;
 
         let activeOpacity = 0;
         if (isTrigger) {
@@ -82,16 +82,56 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           ? (baseLayout.buttonColors[btn.index] ?? config.buttonColor)
           : config.buttonColor;
 
-        const hPct = buttonHeightPct(btn);
-        const radius = buttonBorderRadius(btn.shape);
+        const maskDef = baseLayout.buttonMasks[btn.index];
 
+        // Gradient background (inner fade uses button center from mask metadata)
+        const gradCx = maskDef ? maskDef.cx : 50;
+        const gradCy = maskDef ? maskDef.cy : 50;
         const bg = config.innerFade
-          ? `radial-gradient(circle at center, ${hexToRgba(effectiveColor, 1)} 0%, ${hexToRgba(effectiveColor, 0.55)} 45%, transparent 100%)`
+          ? `radial-gradient(circle at ${gradCx}% ${gradCy}%, ${effectiveColor} 0%, ${hexToRgba(effectiveColor, 0.5)} 45%, transparent 100%)`
           : effectiveColor;
 
-        const shadow = (config.glowEnabled && activeOpacity > 0.01)
-          ? `0 0 ${config.glowSize}px ${hexToRgba(effectiveColor, 0.9)}, 0 0 ${config.glowSize * 2}px ${hexToRgba(effectiveColor, 0.4)}`
+        // Glow via drop-shadow (follows mask contour unlike box-shadow)
+        const glowFilter = (config.glowEnabled && activeOpacity > 0.01)
+          ? `drop-shadow(0 0 ${config.glowSize}px ${hexToRgba(effectiveColor, 0.9)}) drop-shadow(0 0 ${config.glowSize * 2}px ${hexToRgba(effectiveColor, 0.45)})`
           : "none";
+
+        const transitionProp = isTrigger
+          ? "opacity 0.06s linear, filter 0.06s linear"
+          : "opacity 0.04s, filter 0.04s";
+
+        if (maskDef) {
+          // ── Exact-shape overlay using template mask ──────────────────────────
+          return (
+            <div
+              key={btn.index}
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: bg,
+                WebkitMaskImage: `url(${maskDef.url})`,
+                maskImage: `url(${maskDef.url})`,
+                WebkitMaskSize: "contain",
+                maskSize: "contain",
+                WebkitMaskPosition: "center",
+                maskPosition: "center",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                opacity: activeOpacity,
+                filter: glowFilter,
+                transition: transitionProp,
+              }}
+            />
+          );
+        }
+
+        // ── Geometric fallback (no mask defined) ─────────────────────────────
+        const hPct = btn.shape === "pill-h" || btn.shape === "rect" ? btn.size * 0.45 : btn.size;
+        const borderRadius =
+          btn.shape === "circle" || btn.shape.startsWith("cross")
+            ? "50%"
+            : btn.shape === "rect"
+            ? "8px"
+            : "9999px";
 
         return (
           <div
@@ -102,23 +142,16 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
               top: `${btn.y}%`,
               width: `${btn.size}%`,
               height: `${hPct}%`,
-              borderRadius: radius,
+              borderRadius,
               transform: "translate(-50%, -50%)",
               background: bg,
               opacity: activeOpacity,
-              boxShadow: shadow,
-              transition: isTrigger ? "opacity 0.06s linear" : "opacity 0.04s, box-shadow 0.04s",
+              filter: glowFilter,
+              transition: transitionProp,
             }}
           >
             {showButtonLabels && (
-              <span
-                className="font-bold select-none pointer-events-none"
-                style={{
-                  fontSize: "clamp(5px, 1%, 9px)",
-                  color: "#000",
-                  mixBlendMode: "multiply",
-                }}
-              >
+              <span className="font-bold select-none" style={{ fontSize: "clamp(5px,1%,9px)", color: "#000", mixBlendMode: "multiply" }}>
                 {btn.label}
               </span>
             )}
@@ -130,26 +163,22 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
       <div
         className="absolute pointer-events-none"
         style={{
-          left: `${lStick.x}%`,
-          top: `${lStick.y}%`,
-          width: `${lStick.size}%`,
-          aspectRatio: "1/1",
-          transform: "translate(-50%, -50%)",
+          left: `${lStick.x}%`, top: `${lStick.y}%`,
+          width: `${lStick.size}%`, aspectRatio: "1/1",
+          transform: "translate(-50%,-50%)",
         }}
       >
         <div
           style={{
-            width: "100%",
-            height: "100%",
+            width: "100%", height: "100%",
             transform: editMode ? undefined : `translate(${lx * config.stickTravel}px, ${ly * config.stickTravel}px)`,
             transition: "transform 0.03s",
           }}
         >
-          {config.leftStickSkin ? (
-            <img src={config.leftStickSkin} alt="Left stick" className="w-full h-full object-contain" />
-          ) : (
-            <div className="w-full h-full rounded-full bg-white/10 border border-white/20" />
-          )}
+          {config.leftStickSkin
+            ? <img src={config.leftStickSkin} alt="LS" className="w-full h-full object-contain" />
+            : <div className="w-full h-full rounded-full bg-white/10 border border-white/20" />
+          }
         </div>
       </div>
 
@@ -157,26 +186,22 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
       <div
         className="absolute pointer-events-none"
         style={{
-          left: `${rStick.x}%`,
-          top: `${rStick.y}%`,
-          width: `${rStick.size}%`,
-          aspectRatio: "1/1",
-          transform: "translate(-50%, -50%)",
+          left: `${rStick.x}%`, top: `${rStick.y}%`,
+          width: `${rStick.size}%`, aspectRatio: "1/1",
+          transform: "translate(-50%,-50%)",
         }}
       >
         <div
           style={{
-            width: "100%",
-            height: "100%",
+            width: "100%", height: "100%",
             transform: editMode ? undefined : `translate(${rx * config.stickTravel}px, ${ry * config.stickTravel}px)`,
             transition: "transform 0.03s",
           }}
         >
-          {config.rightStickSkin ? (
-            <img src={config.rightStickSkin} alt="Right stick" className="w-full h-full object-contain" />
-          ) : (
-            <div className="w-full h-full rounded-full bg-white/10 border border-white/20" />
-          )}
+          {config.rightStickSkin
+            ? <img src={config.rightStickSkin} alt="RS" className="w-full h-full object-contain" />
+            : <div className="w-full h-full rounded-full bg-white/10 border border-white/20" />
+          }
         </div>
       </div>
 
