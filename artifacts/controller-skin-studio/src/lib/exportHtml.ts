@@ -69,18 +69,27 @@ export async function generateExportHtml(config: ControllerConfig, overrides: La
     const cy = maskDef?.cy ?? 50;
     const maskUrl = maskDataUrls[btn.index];
 
+    // For mask buttons, position at mask center (cx,cy) for perfect alignment
+    const posX = maskDef ? cx : btn.x;
+    const posY = maskDef ? cy : btn.y;
+
     if (maskUrl) {
+      const hPct = btn.shape === "pill-h" || btn.shape === "rect" ? btn.size * 0.45 : btn.size;
       return `
   [data-btn="${btn.index}"] {
     --c: ${color};
     --cx: ${cx}%;
     --cy: ${cy}%;
+    left: ${posX}%; top: ${posY}%;
+    width: ${btn.size}%; height: ${hPct}%;
+    transform: translate(-50%,-50%);
+    position: absolute;
     -webkit-mask-image: url("${maskUrl}");
     mask-image: url("${maskUrl}");
-    -webkit-mask-size: contain;
-    mask-size: contain;
-    -webkit-mask-position: center;
-    mask-position: center;
+    -webkit-mask-size: ${baseLayout.skinWidth}px ${baseLayout.skinHeight}px;
+    mask-size: ${baseLayout.skinWidth}px ${baseLayout.skinHeight}px;
+    -webkit-mask-position: ${posX}% ${posY}%;
+    mask-position: ${posX}% ${posY}%;
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
   }`;
@@ -95,7 +104,7 @@ export async function generateExportHtml(config: ControllerConfig, overrides: La
     --c: ${color};
     --cx: ${cx}%;
     --cy: ${cy}%;
-    left: ${btn.x}%; top: ${btn.y}%;
+    left: ${posX}%; top: ${posY}%;
     width: ${btn.size}%; height: ${hPct}%;
     border-radius: ${radius};
     transform: translate(-50%,-50%);
@@ -129,9 +138,9 @@ export async function generateExportHtml(config: ControllerConfig, overrides: La
 
   #controller { position:relative; width:100%; height:100%; background:${controllerBg}; }
 
-  /* Masked buttons: full-container div, clipped to exact button shape */
+  /* Masked buttons: positioned at mask center, clipped to exact button shape */
   .btn-masked {
-    position:absolute; inset:0;
+    position:absolute;
     pointer-events:none;
     opacity:0;
     background:var(--c, ${DEF_COLOR});

@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { ControllerLayout, buttonHeightPct, STICK_COLORS } from "../lib/controllerLayout";
 import { LayoutOverrides, ButtonOverride, StickOverride } from "../types/config";
 import { RotateCcw } from "lucide-react";
@@ -8,6 +8,17 @@ interface Props {
   overrides: LayoutOverrides;
   onOverridesChange: (o: LayoutOverrides) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
+}
+
+interface MaskStyle {
+  WebkitMaskImage: string;
+  maskImage: string;
+  WebkitMaskSize: string;
+  maskSize: string;
+  WebkitMaskPosition: string;
+  maskPosition: string;
+  WebkitMaskRepeat: string;
+  maskRepeat: string;
 }
 
 interface DragState {
@@ -25,6 +36,39 @@ function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
 }
 
+function computeMaskStyle(
+  btn: { x: number; y: number; size: number; index: number },
+  hPct: number,
+  maskDef: { url: string; cx: number; cy: number } | undefined,
+  layout: ControllerLayout,
+  containerW: number,
+  containerH: number
+): MaskStyle | undefined {
+  if (!maskDef || containerW === 0 || containerH === 0) return undefined;
+  
+  const scale = Math.min(containerW / layout.skinWidth, containerH / layout.skinHeight);
+  const renderedImgW = layout.skinWidth * scale;
+  const renderedImgH = layout.skinHeight * scale;
+  
+  // Compute pixel offset so the mask's button shape centre aligns with the element centre.
+  // This mirrors the same math used in ControllerPreview's maskStyle().
+  const elW = (btn.size / 100) * containerW;
+  const elH = (hPct   / 100) * containerH;
+  const mpX = elW / 2 - (maskDef.cx / 100) * renderedImgW;
+  const mpY = elH / 2 - (maskDef.cy / 100) * renderedImgH;
+
+  return {
+    WebkitMaskImage: `url(${maskDef.url})`,
+    maskImage: `url(${maskDef.url})`,
+    WebkitMaskSize: `${renderedImgW}px ${renderedImgH}px`,
+    maskSize: `${renderedImgW}px ${renderedImgH}px`,
+    WebkitMaskPosition: `${mpX}px ${mpY}px`,
+    maskPosition: `${mpX}px ${mpY}px`,
+    WebkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+  };
+}
+
 interface MarkerProps {
   label: string;
   x: number;
@@ -38,11 +82,12 @@ interface MarkerProps {
   onMove: (x: number, y: number) => void;
   onResize: (size: number) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
+  maskStyle?: MaskStyle;
 }
 
 function DraggableMarker({
   label, x, y, size, heightPct, borderRadius, color, isSelected,
-  onSelect, onMove, onResize, containerRef,
+  onSelect, onMove, onResize, containerRef, maskStyle,
 }: MarkerProps) {
   const markerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -104,12 +149,15 @@ function DraggableMarker({
       <div
         className="w-full h-full flex items-center justify-center relative"
         style={{
-          borderRadius,
-          background: `${color}55`,
-          border: `2px solid ${color}`,
+          borderRadius: maskStyle ? "0" : borderRadius,
+          background: maskStyle ? color : `${color}55`,
+          border: maskStyle ? "none" : `3px solid ${color}`,
           boxShadow: isSelected
             ? `0 0 0 2px white, 0 0 12px ${color}99`
             : `0 0 6px ${color}55`,
+          opacity: 1,
+          backgroundColor: color,
+          ...maskStyle,
         }}
       >
         <span
@@ -148,6 +196,18 @@ function DraggableMarker({
 
 export function LayoutEditor({ layout, overrides, onOverridesChange, containerRef }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      setContainerSize({ w: width, h: height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [containerRef]);
 
   function getBtn(idx: number) {
     const base = layout.buttons.find((b) => b.index === idx)!;
@@ -200,12 +260,27 @@ export function LayoutEditor({ layout, overrides, onOverridesChange, containerRe
         const hPct = buttonHeightPct(eff);
         const key = `btn-${btn.index}`;
         const radius = eff.shape === "rect" ? "8px" : eff.shape === "circle" || eff.shape.startsWith("cross") ? "50%" : "9999px";
+        const maskDef = layout.buttonMasks[btn.index];
+        
+        // For mask buttons, position marker at mask center for perfect alignment
+        const posX = maskDef ? maskDef.cx : eff.x;
+        const posY = maskDef ? maskDef.cy : eff.y;
+        
+        const maskStyle = computeMaskStyle(
+          { ...eff, x: posX, y: posY }, 
+          hPct, 
+          maskDef, 
+          layout, 
+          containerSize.w, 
+          containerSize.h
+        );
+        
         return (
           <DraggableMarker
             key={key}
             label={btn.label}
-            x={eff.x}
-            y={eff.y}
+            x={posX}
+            y={posY}
             size={eff.size}
             heightPct={hPct}
             borderRadius={radius}
@@ -215,6 +290,7 @@ export function LayoutEditor({ layout, overrides, onOverridesChange, containerRe
             onMove={(x, y) => updateButton(btn.index, { x, y })}
             onResize={(size) => updateButton(btn.index, { size })}
             containerRef={containerRef}
+            maskStyle={maskStyle}
           />
         );
       })}

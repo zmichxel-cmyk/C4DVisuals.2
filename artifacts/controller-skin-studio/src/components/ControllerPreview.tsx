@@ -105,7 +105,7 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         )}
       </div>
 
-      {/* Button overlays */}
+      {/* Button overlays - DEBUG: always visible in edit mode */}
       {buttons.map((btn) => {
         const isLt = btn.index === 6;
         const isRt = btn.index === 7;
@@ -116,7 +116,7 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         // Opacity: live only in preview, faint guide in edit mode
         let activeOpacity = 0;
         if (editMode) {
-          activeOpacity = maskDef ? 0.18 : 0; // show shape guides in edit mode
+          activeOpacity = 0; // completely hide in edit mode - LayoutEditor handles markers
         } else if (isTrigger) {
           const tv = isLt ? (gp.triggers[0] ?? 0) : (gp.triggers[1] ?? 0);
           activeOpacity = tv * config.buttonOpacity;
@@ -155,22 +155,46 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
             ? "8px"
             : "9999px";
 
+        // For mask buttons, position at mask center (cx,cy) so mask aligns with controller bg
+        // For geometric buttons, use layout x,y
+        const posX = maskDef ? maskDef.cx : btn.x;
+        const posY = maskDef ? maskDef.cy : btn.y;
+
+        // For mask buttons at mask center, mask-position should be center (not offset)
+        const maskStyle = maskDef
+          ? {
+              WebkitMaskImage: `url(${maskDef.url})`,
+              maskImage: `url(${maskDef.url})`,
+              WebkitMaskSize: `${renderedImgW}px ${renderedImgH}px`,
+              maskSize: `${renderedImgW}px ${renderedImgH}px`,
+              WebkitMaskPosition: "center",
+              maskPosition: "center",
+              WebkitMaskRepeat: "no-repeat",
+              maskRepeat: "no-repeat",
+            }
+          : {};
+
+        // DEBUG: In preview mode, show outline of all buttons so you can see them
+        const debugStyle = {};
+
         return (
           <div
             key={btn.index}
             className="absolute pointer-events-none"
             style={{
-              left: `${btn.x}%`,
-              top: `${btn.y}%`,
+              left: `${posX}%`,
+              top: `${posY}%`,
               width: `${btn.size}%`,
               height: `${hPct}%`,
               transform: "translate(-50%, -50%)",
               borderRadius: maskDef ? undefined : borderRadius,
               background: bg,
+              backgroundColor: effectiveColor,
               opacity: activeOpacity,
               filter: glowFilter,
               transition: transitionProp,
-              ...(maskDef ? maskStyle(btn, hPct, maskDef.url, maskDef.cx, maskDef.cy) : {}),
+              ...maskStyle,
+              ...debugStyle,
             }}
           >
             {/* Label only shown for geometric (non-mask) buttons when labels are on */}
@@ -274,10 +298,23 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           className={`absolute top-2 right-2 text-[9px] font-mono px-2 py-0.5 rounded-full border transition-all ${
             gp.connected
               ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-              : "bg-black/40 text-white/25 border-white/10"
+              : "bg-amber-500/20 text-amber-400 border-amber-500/30"
           }`}
         >
-          {gp.connected ? "● Connected" : `○ ${baseLayout.connectMessage}`}
+          {gp.connected 
+            ? "● Connected - Press buttons to test"
+            : `○ ${baseLayout.connectMessage} - Press any button on controller`}
+        </div>
+      )}
+      
+      {!gp.connected && !editMode && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="text-center text-white/50 bg-black/60 rounded-xl p-6 max-w-xs mx-4">
+            <div className="text-4xl mb-2">🎮</div>
+            <p className="text-sm">No controller detected</p>
+            <p className="text-xs mt-1">Press any button on your controller while this window is focused</p>
+            <p className="text-xs mt-2 opacity-50">Supported: Xbox, PS4, PS5 controllers</p>
+          </div>
         </div>
       )}
     </div>
