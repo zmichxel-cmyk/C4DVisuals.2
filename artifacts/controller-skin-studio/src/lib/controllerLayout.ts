@@ -15,18 +15,23 @@ export interface StickDef {
   y: number;
   size: number;
   travel: number;
+  pressBtn: number; // gamepad button index for L3/R3 press
 }
 
 export interface ButtonMaskDef {
   url: string;
-  cx: number;
-  cy: number;
+  cx: number;   // shape centre x as % of skin image width
+  cy: number;   // shape centre y as % of skin image height
+  sw: number;   // shape pixel width as % of skin image width
+  sh: number;   // shape pixel height as % of skin image height
 }
 
 export interface ControllerLayout {
   name: string;
   connectMessage: string;
   defaultSkinUrl: string;
+  /** Controller-body-only silhouette (no triggers/paddles), used to mask the RGB canvas effect */
+  bodyMaskUrl: string;
   defaultLeftStickUrl: string;
   defaultRightStickUrl: string;
   defaultWidth: number;

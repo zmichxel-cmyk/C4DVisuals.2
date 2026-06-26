@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Settings, Download, Gamepad2, Zap, Palette, Tag, Loader2 } from "lucide-react";
+import { Settings, Download, Zap, Palette, Tag, Loader2, Sparkles, ChevronDown } from "lucide-react";
 import { ControllerConfig, LayoutOverrides } from "../types/config";
-import { CONTROLLER_TYPES, LAYOUTS } from "../lib/layouts";
+import { LAYOUTS } from "../lib/layouts";
 import { generateExportHtml } from "../lib/exportHtml";
 
 interface Props {
@@ -15,48 +15,80 @@ interface Props {
 
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <button
-        onClick={() => onChange(!value)}
-        className={`relative w-9 h-5 rounded-full transition-colors ${value ? "bg-primary" : "bg-muted"}`}
-      >
-        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${value ? "translate-x-4" : "translate-x-0.5"}`} />
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs text-muted-foreground leading-tight flex-1">{label}</span>
+      <button onClick={() => onChange(!value)} style={{ minWidth: "36px" }}
+        className={`relative flex-none w-9 h-5 rounded-full transition-colors duration-200 ${value ? "bg-primary" : "bg-muted"}`}>
+        <span className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-200"
+          style={{ left: value ? "calc(100% - 18px)" : "2px" }} />
       </button>
     </div>
   );
 }
 
-function LabeledSlider({ label, value, min, max, step, display, onChange }: {
-  label: string; value: number; min: number; max: number; step: number;
-  display?: string; onChange: (v: number) => void;
+function Slider({ label, value, min, max, step, display, onChange }: {
+  label: string; value: number; min: number; max: number; step: number; display?: string; onChange: (v: number) => void;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       <div className="flex items-center justify-between">
         <label className="text-xs text-muted-foreground">{label}</label>
-        <span className="text-xs font-mono tabular-nums text-foreground/70">{display ?? value}</span>
+        <span className="text-xs font-mono text-foreground/60">{display ?? value}</span>
       </div>
       <input type="range" min={min} max={max} step={step} value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={e => onChange(Number(e.target.value))}
         className="w-full accent-primary h-1.5 rounded-full cursor-pointer" />
     </div>
   );
 }
 
-function SectionHeader({ icon: Icon, title }: { icon: React.ComponentType<{ size?: number; className?: string }>; title: string }) {
+function Section({ icon: Icon, title }: { icon: React.ComponentType<{ size?: number; className?: string }>; title: string }) {
   return (
-    <div className="flex items-center gap-2 pb-1.5 border-b border-border">
-      <Icon size={14} className="text-primary" />
-      <span className="text-xs font-semibold uppercase tracking-wider text-foreground/70">{title}</span>
+    <div className="flex items-center gap-1.5 pb-0.5 border-b border-border">
+      <Icon size={11} className="text-primary" />
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground/60">{title}</span>
+    </div>
+  );
+}
+
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-1.5">
+      <span className="text-xs text-muted-foreground leading-tight truncate">{label}</span>
+      <div className="flex items-center gap-1 flex-none">
+        <input type="color" value={value} onChange={e => onChange(e.target.value)}
+          className="w-6 h-6 rounded cursor-pointer border border-border bg-card p-0.5" />
+        <span className="text-[10px] font-mono text-foreground/50 w-[52px]">{value}</span>
+      </div>
+    </div>
+  );
+}
+
+function Dropdown({ title, icon: Icon, children }: { title: string; icon: React.ComponentType<{ size?: number; className?: string }>; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-card hover:bg-muted/40 transition-colors">
+        <div className="flex items-center gap-1.5">
+          <Icon size={11} className="text-primary" />
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground/60">{title}</span>
+        </div>
+        <ChevronDown size={12} className={`text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="px-3 py-2 space-y-1.5 border-t border-border bg-background/50">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
 
 export function ConfigPanel({ config, overrides, onChange, onResetOverrides, showButtonLabels, onToggleLabels }: Props) {
   const [exporting, setExporting] = useState(false);
+  const [activeTab, setActiveTab] = useState<"appearance" | "effects">("appearance");
   const layout = LAYOUTS[config.controllerType] ?? LAYOUTS["xbox-one"];
-
   const lStickBase = layout.sticks[0];
   const lStickEff = { ...lStickBase, ...(overrides.sticks[0] ?? {}) };
   const stickSizePx = Math.round(config.width * lStickEff.size / 100);
@@ -69,171 +101,237 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const safeName = (config.overlayName || "overlay").replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
-      a.download = `${safeName}.html`;
+      a.download = `${(config.overlayName || "overlay").replace(/[^a-z0-9_-]/gi, "-").toLowerCase()}.html`;
       a.click();
       URL.revokeObjectURL(url);
-    } finally {
-      setExporting(false);
-    }
+    } finally { setExporting(false); }
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-2 h-full">
+
+      {/* Scrollable content */}
+      <div className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0">
 
       {/* Overlay name */}
-      <div className="space-y-1.5">
-        <SectionHeader icon={Tag} title="Overlay Name" />
-        <input
-          type="text"
-          value={config.overlayName}
-          onChange={(e) => onChange({ overlayName: e.target.value })}
+      <div className="space-y-1">
+        <Section icon={Tag} title="Name" />
+        <input type="text" value={config.overlayName} onChange={e => onChange({ overlayName: e.target.value })}
           placeholder="My Controller"
-          className="w-full text-xs px-2.5 py-2 rounded-md bg-card border border-border text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 transition-colors"
-        />
-        <p className="text-[10px] text-muted-foreground">Used as the exported filename</p>
+          className="w-full text-xs px-2 py-1 rounded-md bg-card border border-border text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 transition-colors" />
       </div>
 
-      {/* Controller type */}
-      <div className="space-y-2">
-        <SectionHeader icon={Gamepad2} title="Controller Type" />
-        <div className="grid grid-cols-3 gap-1.5">
-          {CONTROLLER_TYPES.map((ct) => (
-            <button
-              key={ct.id}
-              onClick={() => {
-                const l = LAYOUTS[ct.id];
-                onChange({
-                  controllerType: ct.id,
-                  controllerSkin: l.defaultSkinUrl,
-                  leftStickSkin: l.defaultLeftStickUrl,
-                  rightStickSkin: l.defaultRightStickUrl,
-                  width: l.defaultWidth,
-                  height: l.defaultHeight,
-                  stickTravel: 16,
-                });
-                onResetOverrides();
-              }}
-              className={`text-xs py-2 px-1 rounded-md border transition-all font-medium ${
-                config.controllerType === ct.id
-                  ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
-                  : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
-              }`}
-            >
-              {ct.label}
-            </button>
-          ))}
-        </div>
+      {/* Tab bar */}
+      <div className="grid grid-cols-2 gap-1 p-0.5 bg-muted rounded-lg">
+        {(["appearance", "effects"] as const).map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={`text-xs py-1.5 rounded-md font-medium transition-all capitalize ${activeTab === tab ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            {tab === "appearance" ? "Appearance" : "Effects"}
+          </button>
+        ))}
       </div>
 
-      {/* Appearance */}
-      <div className="space-y-3">
-        <SectionHeader icon={Palette} title="Appearance" />
-
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs text-muted-foreground">Highlight Color</label>
-            {config.usePerButtonColors && (
-              <span className="text-[9px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-medium">per-button</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <input type="color" value={config.buttonColor}
-              disabled={config.usePerButtonColors}
-              onChange={(e) => onChange({ buttonColor: e.target.value })}
-              className="w-9 h-9 rounded cursor-pointer border border-border bg-card p-0.5 disabled:opacity-30 disabled:cursor-not-allowed" />
-            <span className="text-xs font-mono text-foreground/50">{config.buttonColor}</span>
-          </div>
-        </div>
-
-        <Toggle
-          label="Per-button colors (PS/Xbox palette)"
-          value={config.usePerButtonColors}
-          onChange={(v) => onChange({ usePerButtonColors: v })}
-        />
-
-        <LabeledSlider label="Opacity" value={config.buttonOpacity}
-          min={0.05} max={1} step={0.05}
-          display={`${Math.round(config.buttonOpacity * 100)}%`}
-          onChange={(v) => onChange({ buttonOpacity: v })} />
-      </div>
-
-      {/* Effects */}
-      <div className="space-y-3">
-        <SectionHeader icon={Zap} title="Effects" />
-        <Toggle label="Glow" value={config.glowEnabled} onChange={(v) => onChange({ glowEnabled: v })} />
-        {config.glowEnabled && (
-          <LabeledSlider label="Glow spread" value={config.glowSize}
-            min={4} max={40} step={1}
-            display={`${config.glowSize}px`}
-            onChange={(v) => onChange({ glowSize: v })} />
-        )}
-        <Toggle label="Inner fade (radial gradient)" value={config.innerFade} onChange={(v) => onChange({ innerFade: v })} />
-      </div>
-
-      {/* Settings */}
-      <div className="space-y-3">
-        <SectionHeader icon={Settings} title="Settings" />
-
-        <LabeledSlider label="Stick travel" value={config.stickTravel}
-          min={4} max={40} step={1}
-          display={`${config.stickTravel}px`}
-          onChange={(v) => onChange({ stickTravel: v })} />
-
-        <div className="space-y-1.5">
-          <label className="text-xs text-muted-foreground">Output Size</label>
-          <div className="grid grid-cols-2 gap-1.5">
-            {[
-              { label: "1024×1024", w: 1024, h: 1024 },
-              { label: "800×800",   w: 800,  h: 800  },
-              { label: "1280×720",  w: 1280, h: 720  },
-              { label: "1024×576",  w: 1024, h: 576  },
-            ].map((p) => (
-              <button key={p.label}
-                onClick={() => onChange({ width: p.w, height: p.h })}
-                className={`text-xs px-2 py-1.5 rounded-md border transition-all ${
-                  config.width === p.w && config.height === p.h
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
-                }`}
-              >
-                {p.label}
+      {activeTab === "appearance" && (
+        <>
+          {/* Stick Colors dropdown */}
+          <Dropdown title="Stick Colors" icon={Palette}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">Link stick colors</span>
+              <button onClick={() => onChange({ linkStickColors: !config.linkStickColors })} style={{ minWidth: "36px" }}
+                className={`relative flex-none w-9 h-5 rounded-full transition-colors duration-200 ${config.linkStickColors ? "bg-primary" : "bg-muted"}`}>
+                <span className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-200"
+                  style={{ left: config.linkStickColors ? "calc(100% - 18px)" : "2px" }} />
               </button>
-            ))}
-          </div>
-        </div>
+            </div>
+            {config.linkStickColors ? (
+              <div className="flex items-center gap-2">
+                <input type="color" value={config.leftStickColor} onChange={e => onChange({ leftStickColor: e.target.value, rightStickColor: e.target.value })}
+                  className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
+                <div>
+                  <p className="text-xs font-medium text-foreground">Both Sticks</p>
+                  <p className="text-[10px] font-mono text-muted-foreground">{config.leftStickColor}</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={config.leftStickColor} onChange={e => onChange({ leftStickColor: e.target.value })}
+                    className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
+                  <div>
+                    <p className="text-xs font-medium text-foreground">Left Stick</p>
+                    <p className="text-[10px] font-mono text-muted-foreground">{config.leftStickColor}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={config.rightStickColor} onChange={e => onChange({ rightStickColor: e.target.value })}
+                    className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
+                  <div>
+                    <p className="text-xs font-medium text-foreground">Right Stick</p>
+                    <p className="text-[10px] font-mono text-muted-foreground">{config.rightStickColor}</p>
+                  </div>
+                </div>
+              </>
+            )}
+            <Toggle label="Glow" value={config.stickGlowEnabled} onChange={v => onChange({ stickGlowEnabled: v })} />
+            {config.stickGlowEnabled && (
+              <Slider label="Glow Spread" value={config.stickGlowSize} min={2} max={40} step={1}
+                display={`${config.stickGlowSize}px`} onChange={v => onChange({ stickGlowSize: v })} />
+            )}
+          </Dropdown>
 
-        <div className="rounded-lg bg-primary/10 border border-primary/25 p-2.5 space-y-0.5">
-          <p className="text-[10px] font-semibold text-primary">Thumbstick Image Size</p>
-          <p className="text-sm font-mono font-bold">{stickSizePx} × {stickSizePx} px</p>
-          <p className="text-[10px] text-muted-foreground leading-tight">
-            Make thumbstick PNGs at least this size for {config.width}×{config.height} output.
-          </p>
-        </div>
+          {/* Button Press dropdown */}
+          <Dropdown title="Button Press" icon={Zap}>
+            <div className="flex items-center gap-2">
+              <input type="color" value={config.buttonColor} onChange={e => onChange({ buttonColor: e.target.value })}
+                className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
+              <div>
+                <p className="text-xs font-medium text-foreground">Button Press Color</p>
+                <p className="text-[10px] font-mono text-muted-foreground">{config.buttonColor}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3">
+              <Toggle label="Inner fade" value={config.innerFade} onChange={v => onChange({ innerFade: v })} />
+              <Toggle label="Outer fade" value={config.outerFade} onChange={v => onChange({ outerFade: v })} />
+            </div>
+            <div className="grid grid-cols-2 gap-x-3">
+              <Toggle label="Glow" value={config.glowEnabled} onChange={v => onChange({ glowEnabled: v })} />
+              <Toggle label="Stroke" value={config.strokeEnabled} onChange={v => onChange({ strokeEnabled: v })} />
+            </div>
+            {config.glowEnabled && (
+              <>
+                <Slider label="Opacity" value={config.buttonOpacity} min={0.05} max={1} step={0.05}
+                  display={`${Math.round(config.buttonOpacity * 100)}%`} onChange={v => onChange({ buttonOpacity: v })} />
+                <Slider label="Glow Spread" value={config.glowSize} min={4} max={40} step={1}
+                  display={`${config.glowSize}px`} onChange={v => onChange({ glowSize: v })} />
+              </>
+            )}
+            {config.strokeEnabled && (
+              <>
+                <Slider label="Stroke Width" value={config.strokeWidth} min={1} max={8} step={0.5}
+                  display={`${config.strokeWidth}px`} onChange={v => onChange({ strokeWidth: v })} />
+                <div className="flex items-center gap-2">
+                  <input type="color" value={config.strokeColor} onChange={e => onChange({ strokeColor: e.target.value })}
+                    className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
+                  <div>
+                    <p className="text-xs font-medium text-foreground">Stroke Color</p>
+                    <p className="text-[10px] font-mono text-muted-foreground">{config.strokeColor}</p>
+                  </div>
+                </div>
+              </>
+            )}
+          </Dropdown>
+        </>
+      )}
 
-        <Toggle label="Show button labels" value={showButtonLabels} onChange={onToggleLabels} />
+      {activeTab === "effects" && (
+        <>
+          {/* Body Effects dropdown */}
+          <Dropdown title="Body Effects" icon={Sparkles}>
+            <div className="grid grid-cols-2 gap-1">
+              {([
+                { id: "none",      label: "None"      },
+                { id: "pulseGlow", label: "Pulse Glow" },
+                { id: "particles", label: "Particles"  },
+                { id: "fire",      label: "🔥 Fire"    },
+              ] as const).map(p => (
+                <button key={p.id} onClick={() => onChange({ bodyEffect: p.id })}
+                  className={`text-xs px-1.5 py-1 rounded border transition-all ${config.bodyEffect === p.id ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {config.bodyEffect !== "none" && (
+              <>
+                {config.bodyEffect !== "fire" && (
+                  <Slider label="Speed" value={config.bodyEffectSpeed} min={1} max={20} step={0.5}
+                    display={`${config.bodyEffectSpeed}s`} onChange={v => onChange({ bodyEffectSpeed: v })} />
+                )}
+                <Slider label="Intensity" value={config.bodyEffectIntensity} min={0.05} max={1} step={0.05}
+                  display={`${Math.round(config.bodyEffectIntensity * 100)}%`} onChange={v => onChange({ bodyEffectIntensity: v })} />
+                {config.bodyEffect === "pulseGlow" && (
+                  <ColorField label="Color" value={config.pulseGlowColor} onChange={v => onChange({ pulseGlowColor: v })} />
+                )}
+                {config.bodyEffect === "fire" && (
+                  <>
+                    <ColorField label="Fire Color 1" value={config.fireColor1} onChange={v => onChange({ fireColor1: v })} />
+                    <ColorField label="Fire Color 2" value={config.fireColor2} onChange={v => onChange({ fireColor2: v })} />
+                    <Slider label="Glow Speed" value={config.fireGlowSpeed} min={1} max={20} step={0.5}
+                      display={`${config.fireGlowSpeed}s`} onChange={v => onChange({ fireGlowSpeed: v })} />
+                    <Slider label="Ember Speed" value={config.fireEmberSpeed} min={1} max={20} step={0.5}
+                      display={`${config.fireEmberSpeed}s`} onChange={v => onChange({ fireEmberSpeed: v })} />
+                  </>
+                )}
+              </>
+            )}
+          </Dropdown>
+
+          {/* RGB Body dropdown */}
+          <Dropdown title="RGB Body" icon={Sparkles}>
+            <Toggle label="Enable RGB silhouette" value={config.rgbBodyEnabled} onChange={v => onChange({ rgbBodyEnabled: v })} />
+            {config.rgbBodyEnabled && (
+              <>
+                <div className="grid grid-cols-2 gap-1">
+                  {([
+                    { id: "wave",      label: "Wave"      },
+                    { id: "breathing", label: "Breathing" },
+                  ] as const).map(m => (
+                    <button key={m.id} onClick={() => onChange({ rgbBodyMode: m.id })}
+                      className={`text-xs px-1.5 py-1 rounded border transition-all ${config.rgbBodyMode === m.id ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <Slider label="Speed" value={config.rgbBodySpeed} min={1} max={20} step={0.5}
+                  display={`${config.rgbBodySpeed}s`} onChange={v => onChange({ rgbBodySpeed: v })} />
+                <Slider label="Intensity" value={config.rgbBodyIntensity} min={0.05} max={1} step={0.05}
+                  display={`${Math.round(config.rgbBodyIntensity * 100)}%`} onChange={v => onChange({ rgbBodyIntensity: v })} />
+                {config.rgbBodyMode === "wave" ? (
+                  <>
+                    <Toggle label="Rainbow (Wave)" value={config.rgbBodyWaveRainbow} onChange={v => onChange({ rgbBodyWaveRainbow: v })} />
+                    {!config.rgbBodyWaveRainbow && (
+                      <ColorField label="Wave Color" value={config.rgbBodyWaveColor} onChange={v => onChange({ rgbBodyWaveColor: v })} />
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Toggle label="Rainbow (Breathing)" value={config.rgbBodyBreathingRainbow} onChange={v => onChange({ rgbBodyBreathingRainbow: v })} />
+                    {!config.rgbBodyBreathingRainbow && (
+                      <ColorField label="Breathing Color" value={config.rgbBodyBreathingColor} onChange={v => onChange({ rgbBodyBreathingColor: v })} />
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </Dropdown>
+
+          {/* Settings dropdown */}
+          <Dropdown title="Settings" icon={Settings}>
+            <Toggle label="Watermark" value={config.showWatermark} onChange={v => onChange({ showWatermark: v })} />
+            <Toggle label="Drop Shadow" value={config.showShadow} onChange={v => onChange({ showShadow: v })} />
+            {config.showShadow && (
+              <>
+                <Slider label="Shadow Intensity" value={config.shadowIntensity} min={0.1} max={1} step={0.05}
+                  display={`${Math.round(config.shadowIntensity * 100)}%`} onChange={v => onChange({ shadowIntensity: v })} />
+                <Slider label="Shadow Angle" value={config.shadowAngle} min={0} max={360} step={1}
+                  display={`${config.shadowAngle}°`} onChange={v => onChange({ shadowAngle: v })} />
+              </>
+            )}
+          </Dropdown>
+        </>
+      )}
+
+      </div>{/* end scrollable content */}
+
+      {/* Export — always pinned at bottom */}
+      <div className="space-y-1 pt-1 border-t border-border">
+        <p className="text-[10px] text-muted-foreground">OBS Browser Source: {config.width}×{Math.round(config.width * layout.skinHeight / layout.skinWidth)}</p>
+        <button onClick={handleExport} disabled={exporting}
+          className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-primary/30 disabled:opacity-60 disabled:cursor-wait">
+          {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+          {exporting ? "Exporting…" : "Export HTML for OBS"}
+        </button>
       </div>
-
-      {/* OBS instructions */}
-      <div className="rounded-lg bg-muted/30 border border-border p-3 text-[10px] text-muted-foreground leading-relaxed">
-        <p className="font-semibold text-foreground/60 mb-1">OBS / Streamlabs setup</p>
-        <ol className="space-y-0.5 list-decimal list-inside">
-          <li>Export HTML below</li>
-          <li>Add a <b className="text-foreground/50">Browser Source</b></li>
-          <li>Check <b className="text-foreground/50">Local file</b>, select the HTML</li>
-          <li>Set size to {config.width}×{config.height}</li>
-          <li>Enable <b className="text-foreground/50">Shutdown when not visible</b></li>
-        </ol>
-      </div>
-
-      <button
-        onClick={handleExport}
-        disabled={exporting}
-        className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-primary/30 disabled:opacity-60 disabled:cursor-wait"
-      >
-        {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-        {exporting ? "Embedding assets…" : "Export HTML for OBS"}
-      </button>
     </div>
   );
 }
+

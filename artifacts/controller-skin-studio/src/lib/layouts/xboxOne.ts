@@ -1,9 +1,10 @@
 import { ControllerLayout } from "../controllerLayout";
 
 export const xboxOneLayout: ControllerLayout = {
-  name: "Xbox One",
+  name: "C4D.1",
   connectMessage: "Connect Xbox Controller",
   defaultSkinUrl: "skins/xbox-one-base.png",
+  bodyMaskUrl: "skins/xbox-one-rgb-glow-mask.png",
   defaultLeftStickUrl: "sticks/xbox-left.png",
   defaultRightStickUrl: "sticks/xbox-right.png",
   defaultWidth: 1024,
@@ -34,24 +35,24 @@ export const xboxOneLayout: ControllerLayout = {
 
   // Each entry: url = extracted mask PNG, cx/cy = button center in % of template image size
   buttonMasks: {
-    0:  { url: "masks/xbox-btn-11.png", cx: 74.9, cy: 52.7 },
-    1:  { url: "masks/xbox-btn-8.png",  cx: 81.4, cy: 44.7 },
-    2:  { url: "masks/xbox-btn-7.png",  cx: 68.4, cy: 44.6 },
-    3:  { url: "masks/xbox-btn-5.png",  cx: 74.9, cy: 36.7 },
-    4:  { url: "masks/xbox-btn-2.png",  cx: 26.6, cy: 24.6 },
-    5:  { url: "masks/xbox-btn-3.png",  cx: 74.1, cy: 24.5 },
-    6:  { url: "masks/xbox-btn-0.png",  cx: 28.7, cy: 10.9 },
-    7:  { url: "masks/xbox-btn-1.png",  cx: 72.2, cy: 10.8 },
-    8:  { url: "masks/xbox-btn-9.png",  cx: 43.5, cy: 44.6 },
-    9:  { url: "masks/xbox-btn-10.png", cx: 57.3, cy: 44.6 },
-    10: { url: "masks/xbox-btn-6.png",  cx: 25.9, cy: 44.5 },
-    11: { url: "masks/xbox-btn-14.png", cx: 62.8, cy: 62.6 },
-    12: { url: "masks/xbox-btn-13.png", cx: 38.0, cy: 58.8 },
-    13: { url: "masks/xbox-btn-17.png", cx: 37.9, cy: 69.0 },
-    14: { url: "masks/xbox-btn-15.png", cx: 33.8, cy: 63.8 },
-    15: { url: "masks/xbox-btn-16.png", cx: 42.1, cy: 64.0 },
-    16: { url: "masks/xbox-btn-4.png",  cx: 50.4, cy: 31.9 },
-    17: { url: "masks/xbox-btn-12.png", cx: 50.4, cy: 51.5 },
+    0:  { url: "masks-cropped/xbox-btn-11.png", cx: 74.98, cy: 52.82, sw: 6.81, sh: 8.61 },
+    1:  { url: "masks-cropped/xbox-btn-8.png", cx: 81.49, cy: 44.81, sw: 6.81, sh: 8.7 },
+    2:  { url: "masks-cropped/xbox-btn-7.png", cx: 68.47, cy: 44.72, sw: 6.81, sh: 8.7 },
+    3:  { url: "masks-cropped/xbox-btn-5.png", cx: 74.98, cy: 36.76, sw: 6.81, sh: 8.7 },
+    4:  { url: "masks-cropped/xbox-btn-2.png", cx: 26.81, cy: 26.11, sw: 21.32, sh: 9.63 },
+    5:  { url: "masks-cropped/xbox-btn-3.png", cx: 74.08, cy: 26.06, sw: 21.32, sh: 9.72 },
+    6:  { url: "masks-cropped/xbox-btn-0.png", cx: 28.16, cy: 10.32, sw: 12.04, sh: 18.8 },
+    7:  { url: "masks-cropped/xbox-btn-1.png", cx: 72.7, cy: 10.37, sw: 11.97, sh: 18.89 },
+    8:  { url: "masks-cropped/xbox-btn-9.png", cx: 43.49, cy: 44.68, sw: 4.41, sh: 5.65 },
+    9:  { url: "masks-cropped/xbox-btn-10.png", cx: 57.4, cy: 44.68, sw: 4.41, sh: 5.65 },
+    10:  { url: "masks-cropped/xbox-btn-6.png", cx: 25.99, cy: 44.58, sw: 10.99, sh: 13.61 },
+    11:  { url: "masks-cropped/xbox-btn-14.png", cx: 62.86, cy: 62.73, sw: 10.7, sh: 13.24 },
+    12:  { url: "masks-cropped/xbox-btn-13.png", cx: 38.0, cy: 59.35, sw: 4.79, sh: 8.15 },
+    13:  { url: "masks-cropped/xbox-btn-17.png", cx: 37.96, cy: 68.56, sw: 4.71, sh: 8.06 },
+    14:  { url: "masks-cropped/xbox-btn-15.png", cx: 34.18, cy: 63.89, sw: 6.58, sh: 5.93 },
+    15:  { url: "masks-cropped/xbox-btn-16.png", cx: 41.81, cy: 64.03, sw: 6.43, sh: 5.83 },
+    16:  { url: "masks-cropped/xbox-btn-4.png", cx: 50.45, cy: 31.94, sw: 8.15, sh: 10.37 },
+    17:  { url: "masks-cropped/xbox-btn-12.png", cx: 50.37, cy: 51.57, sw: 5.31, sh: 3.89 },
   },
 
   buttons: [
@@ -65,8 +66,6 @@ export const xboxOneLayout: ControllerLayout = {
     { index: 7,  label: "RT",    x: 76,   y: 13,   size: 12,  shape: "pill-h" },
     { index: 8,  label: "View",  x: 40,   y: 44,   size: 4.5, shape: "circle" },
     { index: 9,  label: "Menu",  x: 57,   y: 44,   size: 4.5, shape: "circle" },
-    { index: 10, label: "LS",    x: 33,   y: 47,   size: 4.5, shape: "circle" },
-    { index: 11, label: "RS",    x: 62,   y: 67,   size: 4.5, shape: "circle" },
     { index: 12, label: "↑",     x: 26,   y: 59,   size: 4,   shape: "cross-up"    },
     { index: 13, label: "↓",     x: 26,   y: 75,   size: 4,   shape: "cross-down"  },
     { index: 14, label: "←",     x: 18,   y: 67,   size: 4,   shape: "cross-left"  },
@@ -75,7 +74,7 @@ export const xboxOneLayout: ControllerLayout = {
     { index: 17, label: "Share", x: 49,   y: 52,   size: 4,   shape: "circle" },
   ],
   sticks: [
-    { axisX: 0, axisY: 1, label: "LS", x: 33, y: 47, size: 13, travel: 16 },
-    { axisX: 2, axisY: 3, label: "RS", x: 62, y: 67, size: 13, travel: 16 },
+    { axisX: 0, axisY: 1, label: "LS", x: 33, y: 47, size: 13, travel: 16, pressBtn: 10 },
+    { axisX: 2, axisY: 3, label: "RS", x: 62, y: 67, size: 13, travel: 16, pressBtn: 11 },
   ],
 };

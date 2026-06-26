@@ -17,7 +17,7 @@ function applyDeadzone(value: number): number {
 const DEFAULT_STATE: GamepadState = {
   connected: false,
   id: "",
-  buttons: new Array(17).fill(false),
+  buttons: new Array(24).fill(false),
   axes: new Array(4).fill(0),
   triggers: [0, 0],
 };
@@ -44,23 +44,31 @@ export function useGamepad() {
 
     const buttons = gp.buttons.map((b) => b.pressed || b.value > 0.1);
 
-    // LT / RT may come as axes (2 / 5 for some controllers) or buttons (6 / 7)
-    const ltAxis = applyDeadzone((gp.axes[2] ?? -1 + 1) / 2);
-    const rtAxis = applyDeadzone((gp.axes[5] ?? -1 + 1) / 2);
-    const ltButton = gp.buttons[6]?.value ?? 0;
-    const rtButton = gp.buttons[7]?.value ?? 0;
+    // Standard mapping:
+    // axes 0/1 = left stick X/Y
+    // axes 2/3 = right stick X/Y
+    // axes 4/5 = LT/RT on PS controllers (range -1 to 1, rest at -1)
+    // buttons 6/7 = LT/RT analog value on Xbox/standard mapping
+    // Never read axes 2/3 as triggers — that's the right stick!
+    const ltFromAxis  = gp.axes[4] !== undefined ? applyDeadzone((gp.axes[4] + 1) / 2) : 0;
+    const rtFromAxis  = gp.axes[5] !== undefined ? applyDeadzone((gp.axes[5] + 1) / 2) : 0;
+    const ltFromBtn   = gp.buttons[6]?.value ?? 0;
+    const rtFromBtn   = gp.buttons[7]?.value ?? 0;
 
     setState({
       connected: true,
       id: gp.id,
       buttons,
       axes: [
-        applyDeadzone(gp.axes[0] ?? 0),
-        applyDeadzone(gp.axes[1] ?? 0),
-        applyDeadzone(gp.axes[2] ?? 0),
-        applyDeadzone(gp.axes[3] ?? 0),
+        applyDeadzone(gp.axes[0] ?? 0), // LS X
+        applyDeadzone(gp.axes[1] ?? 0), // LS Y
+        applyDeadzone(gp.axes[2] ?? 0), // RS X
+        applyDeadzone(gp.axes[3] ?? 0), // RS Y
       ],
-      triggers: [Math.max(ltAxis, ltButton), Math.max(rtAxis, rtButton)],
+      triggers: [
+        Math.max(ltFromAxis, ltFromBtn),
+        Math.max(rtFromAxis, rtFromBtn),
+      ],
     });
 
     rafRef.current = requestAnimationFrame(poll);
