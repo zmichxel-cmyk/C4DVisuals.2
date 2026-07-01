@@ -12,13 +12,6 @@ export interface ControllerConfig {
   controllerSkinVideoFit: "contain" | "cover";
   controllerSkinContrast: number;
   controllerSkinSaturate: number;
-  // Logo overlay — composited on top of the skin in the preview and OBS export.
-  // Allows an animated WebM skin and a static logo to coexist.
-  controllerSkinLogoOverlay: {
-    url: string; x: number; y: number; w: number; h: number;
-    rot: number; opacity: number; blendMode: string;
-    canvasW: number; canvasH: number;
-  } | null;
   showWatermark: boolean;
   showShadow: boolean;
   shadowIntensity: number; // 0-1
@@ -41,23 +34,35 @@ export interface ControllerConfig {
   linkStickColors: boolean;
   stickGlowEnabled: boolean;
   stickGlowSize: number;
+  stickGlowIntensity: number; // 0-1
   stickOpacity: number;
-  bodyEffect: "none" | "pulseGlow" | "particles" | "fire";
+  stickHighlightEnabled: boolean;
+  stickHighlightIntensity: number; // 0-1
+  stickHighlightColor: string;
+  stickShadowEnabled: boolean;
+  stickShadowIntensity: number;    // 0-1
+  stickShadowDistance: number;     // px
+  stickShadowAngle: number;        // 0-360 degrees
+  bodyEffect: "none" | "pulseGlow" | "particles" | "fire" | "reactive" | "orbitTrail" | "lightningStrike";
   bodyEffectSpeed: number;
   bodyEffectIntensity: number;
   pulseGlowColor: string;
+  reactiveRippleColor: string;
+  reactiveRippleRainbow: boolean;
   fireColor1: string;
   fireGlowSpeed: number;
   fireEmberSpeed: number;
   fireColor2: string;
   rgbBodyEnabled: boolean;
   rgbBodySpeed: number;
-  rgbBodyMode: "wave" | "breathing";
+  rgbBodyMode: "wave" | "breathing" | "reactive";
   rgbBodyIntensity: number;
   rgbBodyWaveColor: string;
   rgbBodyWaveRainbow: boolean;
   rgbBodyBreathingColor: string;
   rgbBodyBreathingRainbow: boolean;
+  rgbBodyReactiveColor: string;
+  rgbBodyReactiveRainbow: boolean;
 }
 
 export const DEFAULT_CONFIG: ControllerConfig = {
@@ -70,7 +75,6 @@ export const DEFAULT_CONFIG: ControllerConfig = {
   controllerSkinVideoFit: "contain",
   controllerSkinContrast: 1,
   controllerSkinSaturate: 1,
-  controllerSkinLogoOverlay: null,
   showWatermark: true,
   showShadow: true,
   shadowIntensity: 0.9,
@@ -93,11 +97,21 @@ export const DEFAULT_CONFIG: ControllerConfig = {
   linkStickColors: true,
   stickGlowEnabled: false,
   stickGlowSize: 8,
+  stickGlowIntensity: 0.85,
   stickOpacity: 1,
+  stickHighlightEnabled: true,
+  stickHighlightIntensity: 0.35,
+  stickHighlightColor: "#ffffff",
+  stickShadowEnabled: true,
+  stickShadowIntensity: 0.65,
+  stickShadowDistance: 10,
+  stickShadowAngle: 135,
   bodyEffect: "none",
   bodyEffectSpeed: 6,
   bodyEffectIntensity: 0.5,
   pulseGlowColor: "#7b2ff7",
+  reactiveRippleColor: "#ffffff",
+  reactiveRippleRainbow: true,
   fireColor1: "#ff2200",
   fireGlowSpeed: 4,
   fireEmberSpeed: 6,
@@ -110,6 +124,8 @@ export const DEFAULT_CONFIG: ControllerConfig = {
   rgbBodyWaveRainbow: true,
   rgbBodyBreathingColor: "#e40707",
   rgbBodyBreathingRainbow: true,
+  rgbBodyReactiveColor: "#e40707",
+  rgbBodyReactiveRainbow: true,
 };
 
 export interface ButtonOverride {

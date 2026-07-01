@@ -109,10 +109,28 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           speed={config.rgbBodySpeed}
           mode={config.rgbBodyMode}
           intensity={config.rgbBodyIntensity}
-          color={config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingColor : config.rgbBodyWaveColor}
-          rainbow={config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingRainbow : config.rgbBodyWaveRainbow}
+          color={
+            config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingColor
+            : config.rgbBodyMode === "reactive" ? config.rgbBodyReactiveColor
+            : config.rgbBodyWaveColor
+          }
+          rainbow={
+            config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingRainbow
+            : config.rgbBodyMode === "reactive" ? config.rgbBodyReactiveRainbow
+            : config.rgbBodyWaveRainbow
+          }
+          pressedButtons={config.rgbBodyMode === "reactive" ? new Set(
+            gp.buttons.map((pressed, i) => pressed ? i : -1).filter(i => i >= 0)
+          ) : undefined}
+          buttonPositions={config.rgbBodyMode === "reactive" ? (() => {
+            const pos: Record<number, { x: number; y: number }> = {};
+            buttons.forEach(b  => { pos[b.index]    = { x: b.x, y: b.y }; });
+            sticks.forEach( s  => { pos[s.pressBtn]  = { x: s.x, y: s.y }; });
+            return pos;
+          })() : undefined}
         />
       )}
+
 
       {/* Controller background */}
       <div className="absolute inset-0">
@@ -201,6 +219,24 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           fireColor2={config.fireColor2}
           fireGlowSpeed={config.fireGlowSpeed}
           fireEmberSpeed={config.fireEmberSpeed}
+          reactiveColor={config.reactiveRippleColor}
+          reactiveRainbow={config.reactiveRippleRainbow}
+          pressedButtons={["reactive","orbitTrail","lightningStrike"].includes(config.bodyEffect) ? new Set(
+            gp.buttons.map((pressed, i) => pressed ? i : -1).filter(i => i >= 0)
+          ) : undefined}
+          buttonPositions={["reactive","orbitTrail","lightningStrike"].includes(config.bodyEffect) ? (() => {
+            const pos: Record<number, { x:number; y:number; size:number; shape:string; maskSw?:number; maskSh?:number; skinAspect?:number }> = {};
+            const skinAspect = baseLayout.skinHeight / baseLayout.skinWidth;
+            buttons.forEach(b => {
+              const mask = baseLayout.buttonMasks?.[b.index];
+              pos[b.index] = {
+                x: b.x, y: b.y, size: b.size, shape: b.shape,
+                ...(b.shape === "rect" && mask ? { maskSw: mask.sw, maskSh: mask.sh, skinAspect } : {}),
+              };
+            });
+            sticks.forEach(s => { pos[s.pressBtn] = { x: s.x, y: s.y, size: s.size, shape: "circle" }; });
+            return pos;
+          })() : undefined}
         />
       )}
 
@@ -354,9 +390,25 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         const tiltX = -ay * tiltAmount; // tilt forward/back
         const tiltY = ax * tiltAmount;  // tilt left/right
 
-        // Press glow uses editable stickColor
-        const pressGlow = pressed
-          ? `drop-shadow(0 0 4px white) drop-shadow(0 0 ${config.stickGlowSize ?? 8}px ${stickColor})`
+        // Press glow — layered box-shadow on its own sibling div, fully isolated
+        // from the drop shadow. Intensity controls opacity of each layer; size
+        // controls spread distance — both scale together for a real glow look.
+        const glowSize = config.stickGlowSize ?? 8;
+        const glowInt = config.stickGlowEnabled ? (config.stickGlowIntensity ?? 0.85) : 0;
+        const pressBoxShadow = pressed
+          ? `0 0 4px 2px rgba(255,255,255,${0.9 * glowInt}), `
+            + `0 0 ${glowSize * 0.6}px ${glowSize * 0.6}px ${hexToRgba(stickColor, glowInt)}, `
+            + `0 0 ${glowSize * 1.4}px ${glowSize * 1.4}px ${hexToRgba(stickColor, glowInt * 0.6)}, `
+            + `0 0 ${glowSize * 2.4}px ${glowSize * 2}px ${hexToRgba(stickColor, glowInt * 0.3)}`
+          : undefined;
+
+        // Drop shadow — lives on its own div; completely separate from the glow.
+        const shadowAngleRad = ((config.stickShadowAngle ?? 135) * Math.PI) / 180;
+        const shadowDist = config.stickShadowDistance ?? 10;
+        const sdx = Math.sin(shadowAngleRad) * shadowDist;
+        const sdy = Math.cos(shadowAngleRad) * shadowDist;
+        const stickBoxShadow = (config.stickShadowEnabled ?? true)
+          ? `${sdx}px ${sdy}px ${shadowDist * 1.8}px rgba(0,0,0,${config.stickShadowIntensity ?? 0.65}), ${sdx * 0.4}px ${sdy * 0.4}px ${shadowDist * 0.6}px rgba(0,0,0,${Math.min((config.stickShadowIntensity ?? 0.65) + 0.15, 1)})`
           : undefined;
 
         return (
@@ -380,15 +432,39 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
                   : `translate(${ax * (config.stickTravel / 1280) * cW}px, ${ay * (config.stickTravel / 1280) * cW}px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`,
                 transition: "transform 0.04s ease-out",
                 transformStyle: "preserve-3d",
-                filter: pressGlow,
-                borderRadius: "50%",
-                overflow: "hidden",
+                position: "relative",
               }}
             >
-              {stickSkin
-                ? <img src={stickSkin} alt={stickAlt} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%", display: "block" }} />
-                : <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)" }} />
-              }
+              {/* Layer 1 — drop shadow (z 0). Separate div; no filter, no relation to glow. */}
+              {stickBoxShadow && (
+                <div style={{ position: "absolute", inset: 0, borderRadius: "50%", boxShadow: stickBoxShadow, zIndex: 0 }} />
+              )}
+
+              {/* Layer 2 — stick image, clipped to circle (z 1) */}
+              <div style={{ position: "absolute", inset: 0, borderRadius: "50%", overflow: "hidden", zIndex: 1 }}>
+                {stickSkin
+                  ? <img src={stickSkin} alt={stickAlt} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%", display: "block" }} />
+                  : <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)" }} />
+                }
+              </div>
+
+              {/* Layer 3 — rim highlight (z 2) */}
+              {(config.stickHighlightEnabled ?? true) && (() => {
+                const hCol = config.stickHighlightColor ?? "#ffffff";
+                const hInt = config.stickHighlightIntensity ?? 0.35;
+                return (
+                  <div style={{
+                    position: "absolute", inset: 0, borderRadius: "50%", pointerEvents: "none", zIndex: 2,
+                    background: `radial-gradient(circle, transparent 52%, ${hexToRgba(hCol, hInt * 0.65)} 68%, ${hexToRgba(hCol, hInt)} 78%, transparent 90%)`,
+                  }} />
+                );
+              })()}
+
+              {/* Layer 4 — press glow (z 10). Completely independent sibling; uses box-shadow
+                  not filter, so the drop shadow below cannot affect it in any way. */}
+              {pressed && (
+                <div style={{ position: "absolute", inset: 0, borderRadius: "50%", pointerEvents: "none", zIndex: 10, boxShadow: pressBoxShadow }} />
+              )}
             </div>
           </div>
         );

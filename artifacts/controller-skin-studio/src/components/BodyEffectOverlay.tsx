@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 
-export type BodyEffectType = "none" | "pulseGlow" | "particles" | "fire";
+export type BodyEffectType = "none" | "pulseGlow" | "particles" | "fire" | "reactive" | "orbitTrail" | "lightningStrike";
 
 interface Props {
   effect: BodyEffectType;
@@ -11,6 +11,11 @@ interface Props {
   fireColor2?: string;
   fireGlowSpeed?: number;
   fireEmberSpeed?: number;
+  // Reactive ripple mode
+  pressedButtons?: Set<number>;
+  buttonPositions?: Record<number, { x:number; y:number; size:number; shape:string; maskSw?:number; maskSh?:number; skinAspect?:number }>;
+  reactiveColor?: string;
+  reactiveRainbow?: boolean;
 }
 
 function makeCanvas(maskUrl: string): React.CSSProperties {
@@ -41,6 +46,95 @@ function hexToHsl(hex: string): [number, number, number] {
   return [h*60, s*100, l*100];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Orbit Trail — types and generator
+// Particles spiral outward with conservation of angular momentum (ω ∝ 1/r²),
+// giving a natural deceleration as each arm expands outward.
+// ─────────────────────────────────────────────────────────────────────────────
+type OrbitParticle = {
+  angle0: number;
+  omega0: number;
+  vr:     number;
+  r0:     number;
+  hueOff: number;
+  width:  number;
+};
+type OrbitEvent = { cx:number; cy:number; startT:number; life:number; particles:OrbitParticle[] };
+
+function genOrbitParticles(n: number, maxR: number, life: number, hw: number, hh: number): OrbitParticle[] {
+  return Array.from({ length: n }, (_, i) => {
+    const angle0 = (i / n) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+    const ca = Math.abs(Math.cos(angle0)), sa = Math.abs(Math.sin(angle0));
+    const r0 = (ca < 1e-9 ? hh : sa < 1e-9 ? hw : Math.min(hw/ca, hh/sa)) + Math.random() * 3;
+    return { angle0, omega0: 4.5 + Math.random() * 3.5, vr: maxR * (0.6 + Math.random() * 0.3) / life, r0, hueOff: (i / n) * 360, width: 1.2 + Math.random() * 1.8 };
+  });
+}
+function orbitXY(p: OrbitParticle, age: number, cx: number, cy: number): [number, number] {
+  const r = p.r0 + p.vr * Math.max(age, 0);
+  const theta = p.angle0 + (p.omega0 * p.r0 / p.vr) * (1 - p.r0 / r);
+  return [cx + r * Math.cos(theta), cy + r * Math.sin(theta)];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lightning Strike — types and generator
+// Recursive midpoint displacement. Higher roughness (0.65) + more branch
+// probability gives the jagged, fractal look of real lightning.
+// ─────────────────────────────────────────────────────────────────────────────
+type BoltSeg = { x1:number; y1:number; x2:number; y2:number; depth:number };
+type LightEvent = { cx:number; cy:number; startT:number; life:number; segs:BoltSeg[] };
+
+function subdivide(
+  x1:number, y1:number, x2:number, y2:number,
+  rough:number, depth:number, maxD:number, segs:BoltSeg[]
+) {
+  const dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy);
+  if (depth >= maxD || len < 2) { segs.push({x1,y1,x2,y2,depth:Math.min(depth,2)}); return; }
+  const px=-dy/len, py=dx/len, off=(Math.random()-0.5)*rough*len;
+  const mx=(x1+x2)/2+px*off, my=(y1+y2)/2+py*off;
+  subdivide(x1,y1,mx,my,rough*0.65,depth+1,maxD,segs);
+  subdivide(mx,my,x2,y2,rough*0.65,depth+1,maxD,segs);
+  if (depth < 2 && Math.random() < 0.55-depth*0.1) {
+    const bAng=Math.atan2(dy,dx)+(Math.random()<0.5?1:-1)*(0.3+Math.random()*0.6);
+    const bLen=len*(0.3+Math.random()*0.5);
+    subdivide(mx,my, mx+Math.cos(bAng)*bLen, my+Math.sin(bAng)*bLen, rough*0.6, depth+2, maxD-1, segs);
+  }
+}
+function genLightning(cx:number, cy:number, w:number, h:number, hw:number, hh:number): BoltSeg[] {
+  const segs:BoltSeg[] = [];
+  const maxR = Math.max(w,h);
+  const arms = 2 + Math.floor(Math.random()*2);
+  const base = Math.random()*Math.PI*2;
+  for (let a=0; a<arms; a++) {
+    const ang = base+(a/arms)*Math.PI*2+(Math.random()-0.5)*0.6;
+    const ca=Math.abs(Math.cos(ang)), sa=Math.abs(Math.sin(ang));
+    const edgeR = ca < 1e-9 ? hh : sa < 1e-9 ? hw : Math.min(hw/ca, hh/sa);
+    const sx = cx + Math.cos(ang)*edgeR;
+    const sy = cy + Math.sin(ang)*edgeR;
+    const len = maxR*(0.5+Math.random()*0.45) - edgeR;
+    subdivide(sx, sy, sx+Math.cos(ang)*len, sy+Math.sin(ang)*len, 0.45, 0, 6, segs);
+  }
+  return segs;
+}
+
+// Returns [halfWidth, halfHeight] of the button's visual press area in canvas pixels.
+// For circle/pill/cross buttons hw=hh=(size/200)*w (uniform radius in all directions).
+// For rect (touchpad), uses the buttonMask sw/sh percentages which define the actual
+// visual extent of the press indicator — giving exact edge per direction when combined
+// with the rectEdgeR formula: min(hw/|cosθ|, hh/|sinθ|).
+function buttonHWHH(
+  pos: { size:number; shape:string; maskSw?:number; maskSh?:number; skinAspect?:number },
+  w: number
+): [number, number] {
+  if (pos.shape === "rect" && pos.maskSw != null && pos.maskSh != null && pos.skinAspect != null) {
+    const hw = (pos.maskSw / 200) * w;
+    const hh = (pos.maskSh / 200) * (w * pos.skinAspect);
+    return [hw, hh];
+  }
+  const r = (pos.size / 200) * w;
+  return [r, r];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Generic canvas hook — waits for real dimensions before starting tick
 function useCanvas(
   active: boolean,
@@ -81,7 +175,7 @@ function useCanvas(
   return canvasRef;
 }
 
-export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor, fireColor2 = "#ff8800", fireGlowSpeed = 4, fireEmberSpeed = 6 }: Props) {
+export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor, fireColor2 = "#ff8800", fireGlowSpeed = 4, fireEmberSpeed = 6, pressedButtons, buttonPositions, reactiveColor = "#ffffff", reactiveRainbow = true }: Props) {
   const ss = 1 / Math.max(speed, 0.5);
 
   // Reactive color refs — updated immediately so running tick loops pick up changes
@@ -93,6 +187,26 @@ export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor
   // Raw hex color ref for pulse glow — avoids HSL instability with low-saturation colors
   const glowColorRef = useRef(glowColor);
   useEffect(() => { glowColorRef.current = glowColor; }, [glowColor]);
+
+  // ── Reactive ripple refs ───────────────────────────────────────────────────
+  const pressedRef      = useRef<Set<number>>(new Set());
+  const prevPressedRef  = useRef<Set<number>>(new Set());
+  const btnPosRef = useRef<Record<number, { x:number; y:number; size:number; shape:string; maskSw?:number; maskSh?:number; skinAspect?:number }>>({});
+  const ripplesRef      = useRef<{ cx: number; cy: number; startT: number; edgeR: number }[]>([]);
+  const reactRealTRef   = useRef(0);
+  const reactColorRef   = useRef(reactiveColor);
+  const reactRainbowRef = useRef(reactiveRainbow);
+
+  useEffect(() => { pressedRef.current     = pressedButtons  ?? new Set(); }, [pressedButtons]);
+  useEffect(() => { btnPosRef.current      = buttonPositions ?? {};         }, [buttonPositions]);
+  useEffect(() => { reactColorRef.current  = reactiveColor;                 }, [reactiveColor]);
+  useEffect(() => { reactRainbowRef.current = reactiveRainbow;              }, [reactiveRainbow]);
+
+  // ── Orbit / Lightning / Crystal event stores (each effect owns its own) ───
+  const orbitEventsRef   = useRef<OrbitEvent[]>([]);
+  const orbitTRef        = useRef(0);
+  const lightEventsRef   = useRef<LightEvent[]>([]);
+  const lightTRef        = useRef(0);
 
   // Helper: hex color + alpha → rgba string
   function hexAlpha(hex: string, a: number): string {
@@ -337,6 +451,236 @@ export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor
     ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
   });
 
+  // ── Reactive Ripple ───────────────────────────────────────────────────────
+  // Two canvases stacked:
+  //  reactive3DRef   — overlay blend: draws only the dark shadow trough, giving
+  //                    the 3D "surface rippling" depth look
+  //  reactiveGlowRef — screen blend: draws the intense colored glow ring,
+  //                    same brightness as before. Also owns ripple detection.
+
+  // Screen-blend color glow — handles detection, spawning, and color rendering
+  const reactiveGlowRef = useCanvas(effect === "reactive", [speed, intensity], (ctx, w, h) => {
+    reactRealTRef.current += 0.016;
+    const rt = reactRealTRef.current;
+    const rippleLife = Math.max(speed, 0.5) * 0.22;
+
+    ripplesRef.current = ripplesRef.current.filter(r => rt - r.startT < rippleLife);
+
+    const cur  = pressedRef.current;
+    const prev = prevPressedRef.current;
+    for (const idx of cur) {
+      if (!prev.has(idx)) {
+        const pos = btnPosRef.current[idx];
+        if (pos) {
+          const [hw, hh] = buttonHWHH(pos, w);
+          ripplesRef.current.push({ cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:rt, edgeR:Math.min(hw,hh) });
+        }
+      }
+    }
+    prevPressedRef.current = new Set(cur);
+
+    const col = reactColorRef.current;
+    const rr  = parseInt(col.slice(1,3), 16);
+    const rg  = parseInt(col.slice(3,5), 16);
+    const rb  = parseInt(col.slice(5,7), 16);
+
+    for (const rip of ripplesRef.current) {
+      const age   = rt - rip.startT;
+      const frac  = age / rippleLife;
+      const R     = rip.edgeR + frac * Math.max(w, h) * 1.3;
+      const T     = Math.max(w, h) * 0.06;
+      const alpha = Math.max(0, (1 - frac) * intensity);
+      const hue   = (((age / rippleLife) * 300 + (rip.cx / w) * 120) % 360 + 360) % 360;
+
+      const getC = (a: number) => reactRainbowRef.current
+        ? `hsla(${hue},100%,65%,${a})`
+        : `rgba(${rr},${rg},${rb},${a})`;
+
+      const grd = ctx.createRadialGradient(rip.cx, rip.cy, Math.max(0, R - T), rip.cx, rip.cy, R + T);
+      grd.addColorStop(0,   getC(0));
+      grd.addColorStop(0.3, getC(alpha * 0.5));
+      grd.addColorStop(0.5, getC(alpha));
+      grd.addColorStop(0.7, getC(alpha * 0.5));
+      grd.addColorStop(1,   getC(0));
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // Erase areas of other currently-pressed buttons so their indicators stay visible
+  });
+
+  // Overlay-blend shadow trough — reads ripplesRef but never modifies it
+  const reactive3DRef = useCanvas(effect === "reactive", [speed, intensity], (ctx, w, h) => {
+    const rt         = reactRealTRef.current;
+    const rippleLife = Math.max(speed, 0.5) * 0.22;
+
+    for (const rip of ripplesRef.current) {
+      const age   = rt - rip.startT;
+      if (age < 0) continue;
+      const frac  = age / rippleLife;
+      const R     = rip.edgeR + frac * Math.max(w, h) * 1.3;
+      const T     = Math.max(w, h) * 0.055;
+      const alpha = Math.max(0, (1 - frac) * intensity);
+
+      // Dark ring slightly ahead (outer) of the glow ring → looks like a recessed trough
+      const sR = R + T * 0.65;
+      const sg = ctx.createRadialGradient(rip.cx, rip.cy, Math.max(0, sR - T * 0.9), rip.cx, rip.cy, sR + T * 0.65);
+      sg.addColorStop(0,   `rgba(0,0,0,0)`);
+      sg.addColorStop(0.3, `rgba(0,0,0,${alpha * 0.30})`);
+      sg.addColorStop(0.6, `rgba(0,0,0,${alpha * 0.45})`);
+      sg.addColorStop(1,   `rgba(0,0,0,0)`);
+      ctx.fillStyle = sg;
+      ctx.fillRect(0, 0, w, h);
+    }
+  });
+
+
+  // ── Orbit Trail ──────────────────────────────────────────────────────────
+  const orbitRef = useCanvas(effect === "orbitTrail", [speed, intensity], (ctx, w, h) => {
+    orbitTRef.current += 0.016;
+    const rt = orbitTRef.current;
+    const life = Math.max(speed, 0.5) * 0.28;
+
+    orbitEventsRef.current = orbitEventsRef.current.filter(e => rt - e.startT < e.life);
+    const cur = pressedRef.current, prev = prevPressedRef.current;
+    for (const idx of cur) {
+      if (!prev.has(idx)) {
+        const pos = btnPosRef.current[idx];
+        if (pos) orbitEventsRef.current.push({
+          cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:rt, life,
+          particles: genOrbitParticles(12, Math.max(w,h), life, ...buttonHWHH(pos, w)),
+        });
+      }
+    }
+    prevPressedRef.current = new Set(cur);
+
+    const col=reactColorRef.current;
+    const rr=parseInt(col.slice(1,3),16), rg=parseInt(col.slice(3,5),16), rb=parseInt(col.slice(5,7),16);
+    const TRAIL = 0.22;
+
+    for (const evt of orbitEventsRef.current) {
+      const age = rt - evt.startT;
+      const evtFrac = age / evt.life;
+      const fade = Math.max(0, (1 - evtFrac) * intensity);
+
+      for (const p of evt.particles) {
+        const trailAge = Math.max(0, age - TRAIL);
+        const STEPS = 48;
+        const hue = (p.hueOff + age * 140) % 360;
+        const getC = (a:number) => reactRainbowRef.current
+          ? `hsla(${hue},100%,65%,${a})` : `rgba(${rr},${rg},${rb},${a})`;
+
+        ctx.beginPath();
+        let first = true;
+        for (let i=0; i<=STEPS; i++) {
+          const t = trailAge + (age - trailAge) * (i / STEPS);
+          const [px, py] = orbitXY(p, t, evt.cx, evt.cy);
+          first ? (ctx.moveTo(px,py), first=false) : ctx.lineTo(px,py);
+        }
+        const [tx,ty] = orbitXY(p, trailAge, evt.cx, evt.cy);
+        const [hx,hy] = orbitXY(p, age,      evt.cx, evt.cy);
+        const grd = ctx.createLinearGradient(tx,ty,hx,hy);
+        grd.addColorStop(0, getC(0));
+        grd.addColorStop(0.5, getC(fade * 0.25));
+        grd.addColorStop(1,   getC(fade * 0.7));
+        ctx.strokeStyle = grd;
+        ctx.lineWidth = p.width * 3.5;
+        ctx.lineCap = "round"; ctx.lineJoin = "round";
+        ctx.shadowBlur = 10; ctx.shadowColor = getC(fade * 0.6);
+        ctx.stroke();
+
+        ctx.beginPath(); first = true;
+        for (let i=0; i<=STEPS; i++) {
+          const t = trailAge + (age - trailAge) * (i / STEPS);
+          const [px,py] = orbitXY(p, t, evt.cx, evt.cy);
+          first ? (ctx.moveTo(px,py), first=false) : ctx.lineTo(px,py);
+        }
+        const grd2 = ctx.createLinearGradient(tx,ty,hx,hy);
+        grd2.addColorStop(0, getC(0));
+        grd2.addColorStop(0.6, getC(fade * 0.5));
+        grd2.addColorStop(1,   getC(fade));
+        ctx.strokeStyle = grd2;
+        ctx.lineWidth = p.width * 0.9;
+        ctx.shadowBlur = 4; ctx.shadowColor = getC(fade);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+  });
+
+  // ── Lightning Strike ──────────────────────────────────────────────────────
+  const lightningRef = useCanvas(effect === "lightningStrike", [speed, intensity], (ctx, w, h) => {
+    lightTRef.current += 0.016;
+    const rt = lightTRef.current;
+    const life = Math.max(speed, 0.5) * 0.1;  // short sharp burst
+
+    lightEventsRef.current = lightEventsRef.current.filter(e => rt - e.startT < e.life);
+    const cur = pressedRef.current, prev = prevPressedRef.current;
+    for (const idx of cur) {
+      if (!prev.has(idx)) {
+        const pos = btnPosRef.current[idx];
+        if (pos) lightEventsRef.current.push({
+          cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:rt, life,
+          segs: genLightning((pos.x/100)*w, (pos.y/100)*h, w, h, ...buttonHWHH(pos, w)),
+        });
+      }
+    }
+    prevPressedRef.current = new Set(cur);
+
+    const col=reactColorRef.current;
+    const rr=parseInt(col.slice(1,3),16), rg=parseInt(col.slice(3,5),16), rb=parseInt(col.slice(5,7),16);
+
+    for (const evt of lightEventsRef.current) {
+      const age = rt - evt.startT;
+      const frac = age / evt.life;
+
+      let baseAlpha: number;
+      if (frac < 0.12)      baseAlpha = 1.0;
+      else if (frac < 0.45) baseAlpha = Math.random() > 0.3 ? 0.5 + Math.random()*0.5 : 0.08;
+      else                  baseAlpha = Math.max(0, (1 - frac) * 1.8);
+      baseAlpha *= intensity;
+
+      const hue = reactRainbowRef.current ? (age * 400) % 360 : 0;
+      const colorC = reactRainbowRef.current ? `hsla(${hue},100%,75%,` : `rgba(${rr},${rg},${rb},`;
+      const whiteC = `rgba(255,255,255,`;
+
+      // Impact flash at origin
+      if (frac < 0.18) {
+        const fF = 1 - frac/0.18;
+        const fR = Math.max(w,h)*0.055*fF;
+        const fg = ctx.createRadialGradient(evt.cx,evt.cy,0,evt.cx,evt.cy,fR);
+        fg.addColorStop(0,   `${whiteC}${fF*baseAlpha})`);
+        fg.addColorStop(0.3, `${colorC}${fF*baseAlpha*0.8})`);
+        fg.addColorStop(1,   `${colorC}0)`);
+        ctx.fillStyle=fg; ctx.fillRect(0,0,w,h);
+      }
+
+      ctx.lineCap="round";
+      for (const seg of evt.segs) {
+        const df = Math.pow(0.6, seg.depth);
+        const a = baseAlpha * df;
+        if (a < 0.01) continue;
+
+        // Glow halo
+        ctx.beginPath(); ctx.moveTo(seg.x1,seg.y1); ctx.lineTo(seg.x2,seg.y2);
+        ctx.strokeStyle = `${colorC}${a*0.55})`;
+        ctx.lineWidth = (5 - seg.depth*1.2)*df;
+        ctx.shadowBlur = 18; ctx.shadowColor = `${colorC}${a*0.7})`;
+        ctx.stroke();
+
+        // Bright white core
+        ctx.beginPath(); ctx.moveTo(seg.x1,seg.y1); ctx.lineTo(seg.x2,seg.y2);
+        ctx.strokeStyle = `${whiteC}${a})`;
+        ctx.lineWidth = (1.8 - seg.depth*0.45)*df;
+        ctx.shadowBlur = 5; ctx.shadowColor = `rgba(255,255,255,${a*0.9})`;
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+    }
+
+  });
+
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
       {effect === "pulseGlow" && (
@@ -347,6 +691,12 @@ export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor
         <canvas ref={fireGlowRef} style={makeCanvas(maskUrl)} />
         <canvas ref={fireRef} style={makeCanvas(maskUrl)} />
       </>}
+      {effect === "reactive" && <>
+        <canvas ref={reactive3DRef}   style={{ ...makeCanvas(maskUrl), mixBlendMode: "overlay" as const }} />
+        <canvas ref={reactiveGlowRef} style={makeCanvas(maskUrl)} />
+      </>}
+      {effect === "orbitTrail"      && <canvas ref={orbitRef}    style={makeCanvas(maskUrl)} />}
+      {effect === "lightningStrike" && <canvas ref={lightningRef} style={makeCanvas(maskUrl)} />}
     </div>
   );
 }

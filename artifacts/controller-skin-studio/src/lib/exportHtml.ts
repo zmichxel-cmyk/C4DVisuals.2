@@ -204,8 +204,32 @@ export async function generateExportHtml(config: ControllerConfig, overrides: La
   const RGB_BODY_SPEED = config.rgbBodySpeed;
   const RGB_BODY_MODE = config.rgbBodyMode;
   const RGB_BODY_INTENSITY = config.rgbBodyIntensity;
-  const RGB_BODY_COLOR = config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingColor : config.rgbBodyWaveColor;
-  const RGB_BODY_RAINBOW = config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingRainbow : config.rgbBodyWaveRainbow;
+  const RGB_BODY_COLOR = config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingColor
+    : config.rgbBodyMode === "reactive" ? config.rgbBodyReactiveColor
+    : config.rgbBodyWaveColor;
+  const RGB_BODY_RAINBOW = config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingRainbow
+    : config.rgbBodyMode === "reactive" ? config.rgbBodyReactiveRainbow
+    : config.rgbBodyWaveRainbow;
+
+  // ── Shared button position/press-state data for reactive body effects
+  //    (reactive ripple, orbit trail, lightning strike, RGB body "reactive"
+  //    mode) — mirrors the `buttonPositions`/`pressedButtons` props consumed
+  //    by BodyEffectOverlay.tsx / RgbBodyCanvas.tsx in the live preview.
+  const skinAspect = EXPORT_H / EXPORT_W;
+  const btnPositionsForEffects: Record<number, { x: number; y: number; size: number; shape: string; maskSw?: number; maskSh?: number; skinAspect?: number }> = {};
+  buttons.forEach((btn) => {
+    const maskDef = baseLayout.buttonMasks[btn.index];
+    const btnOverride = overrides.buttons[btn.index];
+    const defaultX = maskDef ? maskDef.cx : btn.x;
+    const defaultY = maskDef ? maskDef.cy : btn.y;
+    btnPositionsForEffects[btn.index] = {
+      x: btnOverride?.x !== undefined ? btnOverride.x : defaultX,
+      y: btnOverride?.y !== undefined ? btnOverride.y : defaultY,
+      size: btnOverride?.size !== undefined ? btnOverride.size : btn.size,
+      shape: btn.shape,
+      ...(maskDef ? { maskSw: maskDef.sw, maskSh: maskDef.sh, skinAspect } : {}),
+    };
+  });
 
   // ── Per-button CSS — mirrors ControllerPreview.tsx exactly ───────────────
   const btnCss = buttons.map((btn) => {
@@ -298,7 +322,15 @@ export async function generateExportHtml(config: ControllerConfig, overrides: La
       : `<div class="btn-wrap" data-wrap="${btn.index}"><div class="btn btn-geo" data-btn="${btn.index}"></div></div>`
   ).join("\n    ");
 
-  const isVideoSkin = config.controllerSkin?.startsWith("blob:") && skinDataUrl.startsWith("data:video");
+  // Video skins are stored as `data:video/...` (uploaded via FileReader.readAsDataURL)
+  // — never `blob:` in practice, since blob: URLs don't survive a reload and get
+  // stripped before persisting. Mirrors the canonical isVideoSkin() helper in
+  // SkinPanel.tsx / MkbView.tsx. (Previously this checked config.controllerSkin for
+  // a "blob:" prefix, which uploaded video skins never actually have — silently
+  // treating every video skin as a static image and rendering nothing for the body.)
+  const isVideoSkin = !!config.controllerSkin &&
+    (config.controllerSkin.startsWith("data:video/") || config.controllerSkin.startsWith("blob:") ||
+     config.controllerSkin.endsWith(".webm") || config.controllerSkin.endsWith(".mp4"));
   const controllerBg = (!isVideoSkin && skinDataUrl) ? `url("${skinDataUrl}") center/contain no-repeat` : "none";
   const leftStickImg = leftStickDataUrl
     ? `<img src="${leftStickDataUrl}" class="stick-img" id="lstick-img" />`
@@ -453,6 +485,21 @@ ${config.showWatermark ? `` : ""}
   var STICK_GLOW=${config.stickGlowEnabled ? "true" : "false"};
   var STICK_GLOW_SIZE=${config.stickGlowSize ?? 8};
 
+  // Shared across the RGB-body and body-effect sub-IIFEs below (closures
+  // over the same mutable objects) so reactive effects can react to live
+  // gamepad button presses without re-polling the gamepad themselves.
+  var pressedButtons = {};
+  var btnPositions = ${JSON.stringify(btnPositionsForEffects)};
+  function buttonHWHH(pos, w){
+    if(pos.shape === 'rect' && pos.maskSw != null && pos.maskSh != null && pos.skinAspect != null){
+      var hw = (pos.maskSw/200)*w;
+      var hh = (pos.maskSh/200)*(w*pos.skinAspect);
+      return [hw, hh];
+    }
+    var r = (pos.size/200)*w;
+    return [r, r];
+  }
+
   function hexToRgba(hex, a){
     var r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
     return 'rgba('+r+','+g+','+b+','+a+')';
@@ -526,6 +573,7 @@ ${config.showWatermark ? `` : ""}
       if(idx===7){ applyBtn(btns[b], rtVal*MAX_OP); continue; }
       var pressed = gp.buttons[idx] ? (gp.buttons[idx].pressed || gp.buttons[idx].value>0.1) : false;
       applyBtn(btns[b], pressed ? MAX_OP : 0);
+      pressedButtons[idx] = pressed;
     }
 
 
@@ -559,6 +607,10 @@ ${config.showWatermark ? `` : ""}
     var COLOR_B = ${parseInt(RGB_BODY_COLOR.slice(5, 7), 16) || 7};
     var t = 0;
     var started = false;
+    // "reactive" mode state — ripples spawned on button press, reusing the
+    // shared pressedButtons/btnPositions/buttonHWHH from the outer scope.
+    var reactiveRipples = [];
+    var reactivePrevPressed = {};
 
     function getC(hue, alpha){
       if(RAINBOW){
@@ -591,6 +643,40 @@ ${config.showWatermark ? `` : ""}
           var hue = RAINBOW ? t*0.08 : 0;
           ctx.fillStyle = getC(hue, INTENSITY * pulse);
           ctx.fillRect(0,0,w,h);
+        } else if(MODE === 'reactive'){
+          // Reactive — a colored ripple expands outward from each button
+          // the moment it's pressed, fading out as it grows.
+          var rippleLife = Math.max(SPEED, 0.5) * 0.22;
+          reactiveRipples = reactiveRipples.filter(function(r){ return t - r.startT < rippleLife; });
+          for(var bidx in pressedButtons){
+            if(pressedButtons[bidx] && !reactivePrevPressed[bidx]){
+              var bpos = btnPositions[bidx];
+              if(bpos){
+                var bhwhh = buttonHWHH(bpos, w);
+                reactiveRipples.push({cx:(bpos.x/100)*w, cy:(bpos.y/100)*h, startT:t, edgeR:Math.min(bhwhh[0],bhwhh[1])});
+              }
+            }
+          }
+          reactivePrevPressed = {};
+          for(var pbidx in pressedButtons) reactivePrevPressed[pbidx] = pressedButtons[pbidx];
+
+          for(var ri=0; ri<reactiveRipples.length; ri++){
+            var rrip = reactiveRipples[ri];
+            var rage = t - rrip.startT;
+            var rfrac = rage / rippleLife;
+            var rR = rrip.edgeR + rfrac * Math.max(w,h) * 1.3;
+            var rT = Math.max(w,h) * 0.06;
+            var ralpha = Math.max(0, (1-rfrac) * INTENSITY);
+            var rhue = (((rage/rippleLife)*300 + (rrip.cx/w)*120)%360+360)%360;
+            var rgrad = ctx.createRadialGradient(rrip.cx, rrip.cy, Math.max(0, rR-rT), rrip.cx, rrip.cy, rR+rT);
+            rgrad.addColorStop(0, getC(rhue, 0));
+            rgrad.addColorStop(0.3, getC(rhue, ralpha*0.5));
+            rgrad.addColorStop(0.5, getC(rhue, ralpha));
+            rgrad.addColorStop(0.7, getC(rhue, ralpha*0.5));
+            rgrad.addColorStop(1, getC(rhue, 0));
+            ctx.fillStyle = rgrad;
+            ctx.fillRect(0,0,w,h);
+          }
         } else {
           // Wave — smoothly blended hue bands via a triangle-wave hue path
           // (no sawtooth 360->0 jump, so there's no hard color-reversal seam),
@@ -675,8 +761,264 @@ ${config.showWatermark ? `` : ""}
       if(EFFECT === 'particles') initParticles();
       else if(EFFECT === 'pulseGlow') initPulseGlow();
       else if(EFFECT === 'fire') initFire();
+      else if(EFFECT === 'reactive') initReactive();
+      else if(EFFECT === 'orbitTrail') initOrbitTrail();
+      else if(EFFECT === 'lightningStrike') initLightningStrike();
+    }
 
+    var REACTIVE_COLOR = '${config.reactiveRippleColor || "#ffffff"}';
+    var REACTIVE_RAINBOW = ${config.reactiveRippleRainbow ? "true" : "false"};
+    function reactiveGetC(hue, a){
+      if(REACTIVE_RAINBOW){
+        var h = ((hue*360)%360+360)%360;
+        return 'hsla('+h+',100%,65%,'+a+')';
+      }
+      var rr=parseInt(REACTIVE_COLOR.slice(1,3),16), rg=parseInt(REACTIVE_COLOR.slice(3,5),16), rb=parseInt(REACTIVE_COLOR.slice(5,7),16);
+      return 'rgba('+rr+','+rg+','+rb+','+a+')';
+    }
 
+    // ── Reactive Ripple ──
+    function initReactive(){
+      var ripples = [];
+      var prevPressed = {};
+      var rt = 0;
+      function tick(){
+        rt += 0.016;
+        var w=canvas.width, h=canvas.height;
+        ctx.clearRect(0,0,w,h);
+        var rippleLife = Math.max(SPEED, 0.5) * 0.22;
+        ripples = ripples.filter(function(r){ return rt - r.startT < rippleLife; });
+        for(var idx in pressedButtons){
+          if(pressedButtons[idx] && !prevPressed[idx]){
+            var pos = btnPositions[idx];
+            if(pos){
+              var hwhh = buttonHWHH(pos, w);
+              ripples.push({cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:rt, edgeR:Math.min(hwhh[0],hwhh[1])});
+            }
+          }
+        }
+        prevPressed = {};
+        for(var k in pressedButtons) prevPressed[k] = pressedButtons[k];
+
+        for(var i=0;i<ripples.length;i++){
+          var rip = ripples[i];
+          var age = rt - rip.startT;
+          var frac = age / rippleLife;
+          var R = rip.edgeR + frac * Math.max(w,h) * 1.3;
+          var T = Math.max(w,h) * 0.06;
+          var alpha = Math.max(0, (1-frac) * INTENSITY);
+          var hue = (((age/rippleLife)*300 + (rip.cx/w)*120)%360+360)%360;
+          var grd = ctx.createRadialGradient(rip.cx, rip.cy, Math.max(0, R-T), rip.cx, rip.cy, R+T);
+          grd.addColorStop(0, reactiveGetC(hue, 0));
+          grd.addColorStop(0.3, reactiveGetC(hue, alpha*0.5));
+          grd.addColorStop(0.5, reactiveGetC(hue, alpha));
+          grd.addColorStop(0.7, reactiveGetC(hue, alpha*0.5));
+          grd.addColorStop(1, reactiveGetC(hue, 0));
+          ctx.fillStyle = grd;
+          ctx.fillRect(0,0,w,h);
+        }
+        requestAnimationFrame(tick);
+      }
+      tick();
+    }
+
+    // ── Orbit Trail — particles spiral outward with conservation of
+    //    angular momentum (ω ∝ 1/r²), giving natural deceleration ──
+    function genOrbitParticles(n, maxR, life, hw, hh){
+      var arr = [];
+      for(var i=0;i<n;i++){
+        var angle0 = (i/n)*Math.PI*2 + (Math.random()-0.5)*0.4;
+        var ca = Math.abs(Math.cos(angle0)), sa = Math.abs(Math.sin(angle0));
+        var r0 = (ca<1e-9?hh:sa<1e-9?hw:Math.min(hw/ca,hh/sa)) + Math.random()*3;
+        arr.push({angle0:angle0, omega0:4.5+Math.random()*3.5, vr:maxR*(0.6+Math.random()*0.3)/life, r0:r0, hueOff:(i/n)*360, width:1.2+Math.random()*1.8});
+      }
+      return arr;
+    }
+    function orbitXY(p, age, cx, cy){
+      var r = p.r0 + p.vr * Math.max(age, 0);
+      var theta = p.angle0 + (p.omega0*p.r0/p.vr) * (1 - p.r0/r);
+      return [cx + r*Math.cos(theta), cy + r*Math.sin(theta)];
+    }
+    function initOrbitTrail(){
+      var events = [];
+      var prevPressed = {};
+      var ot = 0;
+      function tick(){
+        ot += 0.016;
+        var w=canvas.width, h=canvas.height;
+        ctx.clearRect(0,0,w,h);
+        var life = Math.max(SPEED, 0.5) * 0.28;
+        events = events.filter(function(e){ return ot - e.startT < e.life; });
+        for(var idx in pressedButtons){
+          if(pressedButtons[idx] && !prevPressed[idx]){
+            var pos = btnPositions[idx];
+            if(pos){
+              var hwhh = buttonHWHH(pos, w);
+              events.push({cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:ot, life:life,
+                particles: genOrbitParticles(12, Math.max(w,h), life, hwhh[0], hwhh[1])});
+            }
+          }
+        }
+        prevPressed = {};
+        for(var k in pressedButtons) prevPressed[k] = pressedButtons[k];
+
+        var TRAIL = 0.22;
+        for(var ei=0; ei<events.length; ei++){
+          var evt = events[ei];
+          var age = ot - evt.startT;
+          var evtFrac = age / evt.life;
+          var fade = Math.max(0, (1-evtFrac) * INTENSITY);
+          for(var pi=0; pi<evt.particles.length; pi++){
+            var p = evt.particles[pi];
+            var trailAge = Math.max(0, age - TRAIL);
+            var STEPS = 48;
+            var hue = (p.hueOff + age*140) % 360;
+            var getCol = function(a){ return reactiveGetC(hue, a); };
+            var txy = orbitXY(p, trailAge, evt.cx, evt.cy);
+            var hxy = orbitXY(p, age, evt.cx, evt.cy);
+
+            ctx.beginPath();
+            var first = true;
+            for(var i=0;i<=STEPS;i++){
+              var tt = trailAge + (age-trailAge)*(i/STEPS);
+              var xy = orbitXY(p, tt, evt.cx, evt.cy);
+              if(first){ ctx.moveTo(xy[0], xy[1]); first = false; } else ctx.lineTo(xy[0], xy[1]);
+            }
+            var grd = ctx.createLinearGradient(txy[0], txy[1], hxy[0], hxy[1]);
+            grd.addColorStop(0, getCol(0));
+            grd.addColorStop(0.5, getCol(fade*0.25));
+            grd.addColorStop(1, getCol(fade*0.7));
+            ctx.strokeStyle = grd;
+            ctx.lineWidth = p.width * 3.5;
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.shadowBlur = 10; ctx.shadowColor = getCol(fade*0.6);
+            ctx.stroke();
+
+            ctx.beginPath();
+            first = true;
+            for(var i2=0;i2<=STEPS;i2++){
+              var tt2 = trailAge + (age-trailAge)*(i2/STEPS);
+              var xy2 = orbitXY(p, tt2, evt.cx, evt.cy);
+              if(first){ ctx.moveTo(xy2[0], xy2[1]); first = false; } else ctx.lineTo(xy2[0], xy2[1]);
+            }
+            var grd2 = ctx.createLinearGradient(txy[0], txy[1], hxy[0], hxy[1]);
+            grd2.addColorStop(0, getCol(0));
+            grd2.addColorStop(0.6, getCol(fade*0.5));
+            grd2.addColorStop(1, getCol(fade));
+            ctx.strokeStyle = grd2;
+            ctx.lineWidth = p.width * 0.9;
+            ctx.shadowBlur = 4; ctx.shadowColor = getCol(fade);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      tick();
+    }
+
+    // ── Lightning Strike — recursive midpoint displacement for a jagged,
+    //    fractal bolt look ──
+    function subdivideBolt(x1,y1,x2,y2,rough,depth,maxD,segs){
+      var dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy);
+      if(depth>=maxD || len<2){ segs.push({x1:x1,y1:y1,x2:x2,y2:y2,depth:Math.min(depth,2)}); return; }
+      var px=-dy/len, py=dx/len, off=(Math.random()-0.5)*rough*len;
+      var mx=(x1+x2)/2+px*off, my=(y1+y2)/2+py*off;
+      subdivideBolt(x1,y1,mx,my,rough*0.65,depth+1,maxD,segs);
+      subdivideBolt(mx,my,x2,y2,rough*0.65,depth+1,maxD,segs);
+      if(depth<2 && Math.random()<0.55-depth*0.1){
+        var bAng=Math.atan2(dy,dx)+(Math.random()<0.5?1:-1)*(0.3+Math.random()*0.6);
+        var bLen=len*(0.3+Math.random()*0.5);
+        subdivideBolt(mx,my, mx+Math.cos(bAng)*bLen, my+Math.sin(bAng)*bLen, rough*0.6, depth+2, maxD-1, segs);
+      }
+    }
+    function genLightning(cx,cy,w,h,hw,hh){
+      var segs=[];
+      var maxR=Math.max(w,h);
+      var arms=2+Math.floor(Math.random()*2);
+      var base=Math.random()*Math.PI*2;
+      for(var a=0;a<arms;a++){
+        var ang=base+(a/arms)*Math.PI*2+(Math.random()-0.5)*0.6;
+        var ca=Math.abs(Math.cos(ang)), sa=Math.abs(Math.sin(ang));
+        var edgeR = ca<1e-9?hh:sa<1e-9?hw:Math.min(hw/ca,hh/sa);
+        var sx=cx+Math.cos(ang)*edgeR, sy=cy+Math.sin(ang)*edgeR;
+        var len=maxR*(0.5+Math.random()*0.45)-edgeR;
+        subdivideBolt(sx,sy,sx+Math.cos(ang)*len,sy+Math.sin(ang)*len,0.45,0,6,segs);
+      }
+      return segs;
+    }
+    function initLightningStrike(){
+      var events = [];
+      var prevPressed = {};
+      var lt = 0;
+      var rr=parseInt(REACTIVE_COLOR.slice(1,3),16), rg=parseInt(REACTIVE_COLOR.slice(3,5),16), rb=parseInt(REACTIVE_COLOR.slice(5,7),16);
+      function tick(){
+        lt += 0.016;
+        var w=canvas.width, h=canvas.height;
+        ctx.clearRect(0,0,w,h);
+        var life = Math.max(SPEED, 0.5) * 0.1;
+        events = events.filter(function(e){ return lt - e.startT < e.life; });
+        for(var idx in pressedButtons){
+          if(pressedButtons[idx] && !prevPressed[idx]){
+            var pos = btnPositions[idx];
+            if(pos){
+              var hwhh = buttonHWHH(pos, w);
+              var cx=(pos.x/100)*w, cy=(pos.y/100)*h;
+              events.push({cx:cx, cy:cy, startT:lt, life:life, segs: genLightning(cx,cy,w,h,hwhh[0],hwhh[1])});
+            }
+          }
+        }
+        prevPressed = {};
+        for(var k in pressedButtons) prevPressed[k] = pressedButtons[k];
+
+        for(var ei=0; ei<events.length; ei++){
+          var evt = events[ei];
+          var age = lt - evt.startT;
+          var frac = age / evt.life;
+          var baseAlpha;
+          if(frac<0.12) baseAlpha=1.0;
+          else if(frac<0.45) baseAlpha = Math.random()>0.3 ? 0.5+Math.random()*0.5 : 0.08;
+          else baseAlpha = Math.max(0,(1-frac)*1.8);
+          baseAlpha *= INTENSITY;
+
+          var hue = REACTIVE_RAINBOW ? (age*400)%360 : 0;
+          var colorC = REACTIVE_RAINBOW ? 'hsla('+hue+',100%,75%,' : 'rgba('+rr+','+rg+','+rb+',';
+          var whiteC = 'rgba(255,255,255,';
+
+          if(frac<0.18){
+            var fF = 1-frac/0.18;
+            var fR = Math.max(w,h)*0.055*fF;
+            var fg = ctx.createRadialGradient(evt.cx,evt.cy,0,evt.cx,evt.cy,fR);
+            fg.addColorStop(0, whiteC+(fF*baseAlpha)+')');
+            fg.addColorStop(0.3, colorC+(fF*baseAlpha*0.8)+')');
+            fg.addColorStop(1, colorC+'0)');
+            ctx.fillStyle=fg; ctx.fillRect(0,0,w,h);
+          }
+
+          ctx.lineCap='round';
+          for(var si=0; si<evt.segs.length; si++){
+            var seg = evt.segs[si];
+            var df = Math.pow(0.6, seg.depth);
+            var a = baseAlpha*df;
+            if(a<0.01) continue;
+
+            ctx.beginPath(); ctx.moveTo(seg.x1,seg.y1); ctx.lineTo(seg.x2,seg.y2);
+            ctx.strokeStyle = colorC+(a*0.55)+')';
+            ctx.lineWidth = (5-seg.depth*1.2)*df;
+            ctx.shadowBlur=18; ctx.shadowColor = colorC+(a*0.7)+')';
+            ctx.stroke();
+
+            ctx.beginPath(); ctx.moveTo(seg.x1,seg.y1); ctx.lineTo(seg.x2,seg.y2);
+            ctx.strokeStyle = whiteC+a+')';
+            ctx.lineWidth = (1.8-seg.depth*0.45)*df;
+            ctx.shadowBlur=5; ctx.shadowColor='rgba(255,255,255,'+(a*0.9)+')';
+            ctx.stroke();
+          }
+          ctx.shadowBlur=0;
+        }
+        requestAnimationFrame(tick);
+      }
+      tick();
     }
 
     // ── Particles ──

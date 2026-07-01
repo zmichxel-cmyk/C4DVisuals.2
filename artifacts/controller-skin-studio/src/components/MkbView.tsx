@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { RgbBodyCanvas } from "./RgbBodyCanvas";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Preset helpers — exported so Studio can use them
@@ -354,7 +355,11 @@ function isVideoSkin(url: string): boolean {
          url.endsWith(".webm") || url.endsWith(".mp4");
 }
 
-function MouseView({skinUrl, color, editMode, opacity=1, glow=6, innerFade=false, outerFade=false, masks, onMasksChange, videoFit="contain", contrast=1, saturate=1}: {skinUrl:string; color:string; editMode:boolean; opacity?:number; glow?:number; innerFade?:boolean; outerFade?:boolean; masks:MouseMaskDef[]; onMasksChange:(m:MouseMaskDef[])=>void; videoFit?:"contain"|"cover"; contrast?:number; saturate?:number}) {
+function MouseView({skinUrl, color, editMode, opacity=1, glow=6, innerFade=false, outerFade=false, masks, onMasksChange, videoFit="contain", contrast=1, saturate=1,
+  mouseRgbEnabled=false, mouseRgbMode="wave" as "wave"|"breathing", mouseRgbSpeed=6, mouseRgbIntensity=1, mouseRgbColor="#e40707", mouseRgbRainbow=true,
+}: {skinUrl:string; color:string; editMode:boolean; opacity?:number; glow?:number; innerFade?:boolean; outerFade?:boolean; masks:MouseMaskDef[]; onMasksChange:(m:MouseMaskDef[])=>void; videoFit?:"contain"|"cover"; contrast?:number; saturate?:number;
+  mouseRgbEnabled?:boolean; mouseRgbMode?:"wave"|"breathing"; mouseRgbSpeed?:number; mouseRgbIntensity?:number; mouseRgbColor?:string; mouseRgbRainbow?:boolean;
+}) {
   const [pos,setPos]=useState({x:0,y:0});
   const posRef=useRef({x:0,y:0});
   const [btns,setBtns]=useState<Set<number>>(new Set());
@@ -443,6 +448,18 @@ function MouseView({skinUrl, color, editMode, opacity=1, glow=6, innerFade=false
       <div ref={containerRef} style={{position:"relative",width:"294px",height:"392px",
         transform:`translate(${editMode?0:pos.x}px,${editMode?0:pos.y}px)`,
         transition:"transform 0.04s ease-out",willChange:"transform"}}>
+
+        {/* RGB body layer — masked to mouse skin silhouette, sits BEHIND the skin */}
+        {mouseRgbEnabled && !isVideoSkin(skinUrl) && (
+          <RgbBodyCanvas
+            maskUrl={skinUrl}
+            mode={mouseRgbMode}
+            speed={mouseRgbSpeed}
+            intensity={mouseRgbIntensity}
+            color={mouseRgbColor}
+            rainbow={mouseRgbRainbow}
+          />
+        )}
 
         {/* Mouse skin — wrapper carries color correction; filter never goes directly on <video> */}
         <div style={{
@@ -534,6 +551,12 @@ interface Props {
   mouseGlow: number;
   mouseInnerFade: boolean;
   mouseOuterFade: boolean;
+  mouseRgbEnabled?: boolean;
+  mouseRgbMode?: "wave"|"breathing";
+  mouseRgbSpeed?: number;
+  mouseRgbIntensity?: number;
+  mouseRgbColor?: string;
+  mouseRgbRainbow?: boolean;
   mkbShowShadow: boolean;
   mkbShadowIntensity: number;
   mkbShadowAngle: number;
@@ -559,7 +582,7 @@ interface Props {
   onGetMasksRef?: React.MutableRefObject<()=>{id:string;cx:number;cy:number;w:number;h:number}[]>;
 }
 
-export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseColor,kbOpacity,kbGlow,mouseOpacity,mouseGlow,mouseInnerFade,mouseOuterFade,mkbShowShadow,mkbShadowIntensity,mkbShadowAngle,rgbStyle,onRgbStyleChange,rainbow,onRainbowChange,onRgbOff,keyboardSkinUrl,mouseSkinUrl,keyboardButtonsUrl,kbSkinVideoFit="contain",kbSkinContrast=1,kbSkinSaturate=1,mouseSkinVideoFit="contain",mouseSkinContrast=1,mouseSkinSaturate=1,editMode,keyOverrides,mouseOverrides,onKeyOverridesChange,onMouseOverridesChange,onGetMasksRef}:Props) {
+export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseColor,kbOpacity,kbGlow,mouseOpacity,mouseGlow,mouseInnerFade,mouseOuterFade,mouseRgbEnabled=false,mouseRgbMode="wave" as "wave"|"breathing",mouseRgbSpeed=6,mouseRgbIntensity=1,mouseRgbColor="#e40707",mouseRgbRainbow=true,mkbShowShadow,mkbShadowIntensity,mkbShadowAngle,rgbStyle,onRgbStyleChange,rainbow,onRainbowChange,onRgbOff,keyboardSkinUrl,mouseSkinUrl,keyboardButtonsUrl,kbSkinVideoFit="contain",kbSkinContrast=1,kbSkinSaturate=1,mouseSkinVideoFit="contain",mouseSkinContrast=1,mouseSkinSaturate=1,editMode,keyOverrides,mouseOverrides,onKeyOverridesChange,onMouseOverridesChange,onGetMasksRef}:Props) {
   const [pressedKeys,setPressedKeys]=useState<Set<string>>(new Set());
   const [selected,setSelected]=useState<string|null>(null);
   const [ledActive,setLedActive]=useState<Map<string,1|2>>(new Map());
@@ -686,11 +709,16 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
               keyPositions={keyPositions}/>
           </div>
 
-          {/* Layer 3: Keyboard keys PNG — transparent key shapes sit on top of RGB */}
+          {/* Layer 3: Keyboard keys — transparent key shapes sit on top of RGB.
+              Supports both PNG (static) and WebM (animated). */}
           {keyboardButtonsUrl&&(
-            <img src={keyboardButtonsUrl} alt=""
-              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-              style={{zIndex:3}}/>
+            isVideoSkin(keyboardButtonsUrl)
+              ? <video src={keyboardButtonsUrl} autoPlay loop muted playsInline
+                  className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                  style={{zIndex:3}} />
+              : <img src={keyboardButtonsUrl} alt=""
+                  className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                  style={{zIndex:3}}/>
           )}
 
           {/* Layer 3.5: LED indicators — solid red on 1st press, RGB cycling on 2nd press, off on 3rd */}
@@ -775,6 +803,8 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
           <MouseView skinUrl={mouseSkinUrl} color={mouseColor} editMode={editMode}
             opacity={mouseOpacity} glow={mouseGlow} innerFade={mouseInnerFade} outerFade={mouseOuterFade}
             videoFit={mouseSkinVideoFit} contrast={mouseSkinContrast} saturate={mouseSkinSaturate}
+            mouseRgbEnabled={mouseRgbEnabled} mouseRgbMode={mouseRgbMode} mouseRgbSpeed={mouseRgbSpeed}
+            mouseRgbIntensity={mouseRgbIntensity} mouseRgbColor={mouseRgbColor} mouseRgbRainbow={mouseRgbRainbow}
             masks={masks} onMasksChange={handleMasksChange}/>
         </div>
       </div>

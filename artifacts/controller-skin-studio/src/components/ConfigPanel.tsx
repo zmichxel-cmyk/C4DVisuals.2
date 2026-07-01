@@ -122,10 +122,10 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
       </div>
 
       {/* Tab bar */}
-      <div className="grid grid-cols-2 gap-1 p-0.5 bg-muted rounded-lg">
+      <div className="flex gap-1.5">
         {(["appearance", "effects"] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
-            className={`text-xs py-1.5 rounded-md font-medium transition-all capitalize ${activeTab === tab ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            className={`text-xs px-2.5 py-1 rounded-md border transition-all font-medium capitalize ${activeTab === tab ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}>
             {tab === "appearance" ? "Appearance" : "Effects"}
           </button>
         ))}
@@ -174,8 +174,44 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
             )}
             <Toggle label="Glow" value={config.stickGlowEnabled} onChange={v => onChange({ stickGlowEnabled: v })} />
             {config.stickGlowEnabled && (
-              <Slider label="Glow Spread" value={config.stickGlowSize} min={2} max={40} step={1}
-                display={`${config.stickGlowSize}px`} onChange={v => onChange({ stickGlowSize: v })} />
+              <>
+                <Slider label="Glow Intensity" value={config.stickGlowIntensity ?? 0.85} min={0.05} max={1} step={0.05}
+                  display={`${Math.round((config.stickGlowIntensity ?? 0.85) * 100)}%`}
+                  onChange={v => onChange({ stickGlowIntensity: v })} />
+                <Slider label="Glow Spread" value={config.stickGlowSize} min={2} max={40} step={1}
+                  display={`${config.stickGlowSize}px`} onChange={v => onChange({ stickGlowSize: v })} />
+              </>
+            )}
+            <Toggle label="Rim Highlight" value={config.stickHighlightEnabled ?? true} onChange={v => onChange({ stickHighlightEnabled: v })} />
+            {(config.stickHighlightEnabled ?? true) && (
+              <>
+                <Slider label="Intensity" value={config.stickHighlightIntensity ?? 0.35} min={0.05} max={1} step={0.05}
+                  display={`${Math.round((config.stickHighlightIntensity ?? 0.35) * 100)}%`}
+                  onChange={v => onChange({ stickHighlightIntensity: v })} />
+                <div className="flex items-center gap-2">
+                  <input type="color" value={config.stickHighlightColor ?? "#ffffff"}
+                    onChange={e => onChange({ stickHighlightColor: e.target.value })}
+                    className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
+                  <div>
+                    <p className="text-xs font-medium text-foreground">Highlight Color</p>
+                    <p className="text-[10px] font-mono text-muted-foreground">{config.stickHighlightColor ?? "#ffffff"}</p>
+                  </div>
+                </div>
+              </>
+            )}
+            <Toggle label="Drop Shadow" value={config.stickShadowEnabled ?? true} onChange={v => onChange({ stickShadowEnabled: v })} />
+            {(config.stickShadowEnabled ?? true) && (
+              <>
+                <Slider label="Intensity" value={config.stickShadowIntensity ?? 0.65} min={0.05} max={1} step={0.05}
+                  display={`${Math.round((config.stickShadowIntensity ?? 0.65) * 100)}%`}
+                  onChange={v => onChange({ stickShadowIntensity: v })} />
+                <Slider label="Distance" value={config.stickShadowDistance ?? 10} min={1} max={40} step={1}
+                  display={`${config.stickShadowDistance ?? 10}px`}
+                  onChange={v => onChange({ stickShadowDistance: v })} />
+                <Slider label="Angle" value={config.stickShadowAngle ?? 135} min={0} max={360} step={1}
+                  display={`${config.stickShadowAngle ?? 135}°`}
+                  onChange={v => onChange({ stickShadowAngle: v })} />
+              </>
             )}
           </Dropdown>
 
@@ -229,10 +265,13 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
           <Dropdown title="Body Effects" icon={Sparkles}>
             <div className="grid grid-cols-2 gap-1">
               {([
-                { id: "none",      label: "None"      },
-                { id: "pulseGlow", label: "Pulse Glow" },
-                { id: "particles", label: "Particles"  },
-                { id: "fire",      label: "🔥 Fire"    },
+                { id: "none",           label: "None"          },
+                { id: "pulseGlow",      label: "Pulse Glow"    },
+                { id: "particles",      label: "Particles"     },
+                { id: "fire",           label: "🔥 Fire"       },
+                { id: "reactive",       label: "⚡ Reactive"   },
+                { id: "orbitTrail",     label: "🌀 Orbit Trail" },
+                { id: "lightningStrike",label: "⚡ Lightning"  },
               ] as const).map(p => (
                 <button key={p.id} onClick={() => onChange({ bodyEffect: p.id })}
                   className={`text-xs px-1.5 py-1 rounded border transition-all ${config.bodyEffect === p.id ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}>
@@ -250,6 +289,14 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
                   display={`${Math.round(config.bodyEffectIntensity * 100)}%`} onChange={v => onChange({ bodyEffectIntensity: v })} />
                 {config.bodyEffect === "pulseGlow" && (
                   <ColorField label="Color" value={config.pulseGlowColor} onChange={v => onChange({ pulseGlowColor: v })} />
+                )}
+                {(config.bodyEffect === "reactive" || config.bodyEffect === "orbitTrail" || config.bodyEffect === "lightningStrike" || config.bodyEffect === "crystalFracture") && (
+                  <>
+                    <Toggle label="Rainbow" value={config.reactiveRippleRainbow} onChange={v => onChange({ reactiveRippleRainbow: v })} />
+                    {!config.reactiveRippleRainbow && (
+                      <ColorField label="Color" value={config.reactiveRippleColor} onChange={v => onChange({ reactiveRippleColor: v })} />
+                    )}
+                  </>
                 )}
                 {config.bodyEffect === "fire" && (
                   <>
@@ -270,10 +317,11 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
             <Toggle label="Enable RGB silhouette" value={config.rgbBodyEnabled} onChange={v => onChange({ rgbBodyEnabled: v })} />
             {config.rgbBodyEnabled && (
               <>
-                <div className="grid grid-cols-2 gap-1">
+                <div className="grid grid-cols-3 gap-1">
                   {([
                     { id: "wave",      label: "Wave"      },
                     { id: "breathing", label: "Breathing" },
+                    { id: "reactive",  label: "Reactive"  },
                   ] as const).map(m => (
                     <button key={m.id} onClick={() => onChange({ rgbBodyMode: m.id })}
                       className={`text-xs px-1.5 py-1 rounded border transition-all ${config.rgbBodyMode === m.id ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}>
@@ -292,11 +340,18 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
                       <ColorField label="Wave Color" value={config.rgbBodyWaveColor} onChange={v => onChange({ rgbBodyWaveColor: v })} />
                     )}
                   </>
-                ) : (
+                ) : config.rgbBodyMode === "breathing" ? (
                   <>
                     <Toggle label="Rainbow (Breathing)" value={config.rgbBodyBreathingRainbow} onChange={v => onChange({ rgbBodyBreathingRainbow: v })} />
                     {!config.rgbBodyBreathingRainbow && (
                       <ColorField label="Breathing Color" value={config.rgbBodyBreathingColor} onChange={v => onChange({ rgbBodyBreathingColor: v })} />
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Toggle label="Rainbow (Reactive)" value={config.rgbBodyReactiveRainbow} onChange={v => onChange({ rgbBodyReactiveRainbow: v })} />
+                    {!config.rgbBodyReactiveRainbow && (
+                      <ColorField label="Ripple Color" value={config.rgbBodyReactiveColor} onChange={v => onChange({ rgbBodyReactiveColor: v })} />
                     )}
                   </>
                 )}
