@@ -8,10 +8,10 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "electron": "electron electron-main.js",
+    "electron": "electron electron-main.cjs",
     "electron:build": "pnpm run build && electron-builder"
   },
-  "main": "electron-main.js",
+  "main": "electron-main.cjs",
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.4",
@@ -57,6 +57,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "electron": "^42.3.3",
+    "electron-builder": "^26.15.3",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "catalog:",
     "input-otp": "^1.4.2",
@@ -77,5 +78,30 @@
     "vite": "catalog:",
     "wouter": "^3.3.5",
     "zod": "catalog:"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
+  },
+  "build": {
+    "appId": "com.customs4daez.c4dvisuals",
+    "productName": "C4D Visuals",
+    "icon": "build/icon.png",
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "files": [
+      "dist/**/*",
+      "electron-main.cjs",
+      "preload.cjs",
+      "splash.html"
+    ],
+    "directories": {
+      "buildResources": "build"
+    }
   }
 }

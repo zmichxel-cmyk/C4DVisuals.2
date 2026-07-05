@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Upload, Eraser, Paintbrush, Wand2, Undo2, RotateCcw, ZoomIn, ZoomOut, Image as ImageIcon, Square, Circle, Check, X, ArrowRightCircle, MousePointer, ChevronDown } from "lucide-react";
 import { ControllerType, CONTROLLER_TYPES } from "../lib/layouts";
+import { addToCustomLibrary } from "./LibraryPicker";
 
 type Tool = "select" | "wand" | "erase" | "restore" | "crop-rect" | "crop-circle";
 export type ExportSlot = "controllerSkin" | "leftStickSkin" | "rightStickSkin";
@@ -35,43 +36,43 @@ interface HomeButtonState {
 }
 
 const BEZEL_LIBRARY = [
-  { id: "analog-bezel",          name: "Analog Bezel",          url: "/bezels/analog-bezel.png" },
-  { id: "anodized",              name: "Anodized",              url: "/bezels/anodized.png" },
-  { id: "aurora",                name: "Aurora",                url: "/bezels/aurora.png" },
-  { id: "carbon-fiber",          name: "Carbon Fiber",          url: "/bezels/carbon-fiber.png" },
-  { id: "carbon-fiber-gunmetal", name: "Carbon Fiber Gunmetal", url: "/bezels/carbon-fiber-gunmetal.png" },
-  { id: "chrome",                name: "Chrome",                url: "/bezels/chrome.png" },
-  { id: "chrome-blue",           name: "Chrome Blue",           url: "/bezels/chrome-blue.png" },
-  { id: "concrete",              name: "Concrete",              url: "/bezels/concrete.png" },
-  { id: "cracked-magma",         name: "Cracked Magma",         url: "/bezels/cracked-magma.png" },
-  { id: "crystalized",           name: "Crystalized",           url: "/bezels/crystalized.png" },
-  { id: "glossy-black",          name: "Glossy Black",          url: "/bezels/glossy-black.png" },
-  { id: "gold",                  name: "Gold",                  url: "/bezels/gold.png" },
-  { id: "gunmetal",              name: "Gunmetal",              url: "/bezels/gunmetal.png" },
-  { id: "h-713",                 name: "H-713",                 url: "/bezels/h-713.png" },
-  { id: "hammered-copper",       name: "Hammered Copper",       url: "/bezels/hammered-copper.png" },
-  { id: "knitted-fiber",         name: "Knitted Fiber",         url: "/bezels/knitted-fiber.png" },
-  { id: "marble",                name: "Marble",                url: "/bezels/marble.png" },
-  { id: "matte-black",           name: "Matte Black",           url: "/bezels/matte-black.png" },
-  { id: "matte-blue",            name: "Matte Blue",            url: "/bezels/matte-blue.png" },
-  { id: "matte-gold",            name: "Matte Gold",            url: "/bezels/matte-gold.png" },
-  { id: "matte-gray",            name: "Matte Gray",            url: "/bezels/matte-gray.png" },
-  { id: "matte-red",             name: "Matte Red",             url: "/bezels/matte-red.png" },
-  { id: "matte-tan",             name: "Matte Tan",             url: "/bezels/matte-tan.png" },
-  { id: "molten-lava",           name: "Molten Lava",           url: "/bezels/molten-lava.png" },
-  { id: "mother-of-pearl",       name: "Mother of Pearl",       url: "/bezels/mother-of-pearl.png" },
-  { id: "nebula",                name: "Nebula",                url: "/bezels/nebula.png" },
-  { id: "opal",                  name: "Opal",                  url: "/bezels/opal.png" },
-  { id: "red-knitted-fiber",     name: "Red Knitted Fiber",     url: "/bezels/red-knitted-fiber.png" },
-  { id: "ridged-steel",          name: "Ridged Steel",          url: "/bezels/ridged-steel.png" },
-  { id: "rock",                  name: "Rock",                  url: "/bezels/rock.png" },
-  { id: "scuffed-anodized",      name: "Scuffed Anodized",      url: "/bezels/scuffed-anodized.png" },
-  { id: "silver",                name: "Silver",                url: "/bezels/silver.png" },
-  { id: "silver-wood-grain",     name: "Silver Wood Grain",     url: "/bezels/silver-wood-grain.png" },
-  { id: "soap-stone",            name: "Soap Stone",            url: "/bezels/soap-stone.png" },
-  { id: "steel",                 name: "Steel",                 url: "/bezels/steel.png" },
-  { id: "wicker",                name: "Wicker",                url: "/bezels/wicker.png" },
-  { id: "wood-grain",            name: "Wood Grain",            url: "/bezels/wood-grain.png" },
+  { id: "analog-bezel",          name: "Analog Bezel",          url: "bezels/analog-bezel.png" },
+  { id: "anodized",              name: "Anodized",              url: "bezels/anodized.png" },
+  { id: "aurora",                name: "Aurora",                url: "bezels/aurora.png" },
+  { id: "carbon-fiber",          name: "Carbon Fiber",          url: "bezels/carbon-fiber.png" },
+  { id: "carbon-fiber-gunmetal", name: "Carbon Fiber Gunmetal", url: "bezels/carbon-fiber-gunmetal.png" },
+  { id: "chrome",                name: "Chrome",                url: "bezels/chrome.png" },
+  { id: "chrome-blue",           name: "Chrome Blue",           url: "bezels/chrome-blue.png" },
+  { id: "concrete",              name: "Concrete",              url: "bezels/concrete.png" },
+  { id: "cracked-magma",         name: "Cracked Magma",         url: "bezels/cracked-magma.png" },
+  { id: "crystalized",           name: "Crystalized",           url: "bezels/crystalized.png" },
+  { id: "glossy-black",          name: "Glossy Black",          url: "bezels/glossy-black.png" },
+  { id: "gold",                  name: "Gold",                  url: "bezels/gold.png" },
+  { id: "gunmetal",              name: "Gunmetal",              url: "bezels/gunmetal.png" },
+  { id: "h-713",                 name: "H-713",                 url: "bezels/h-713.png" },
+  { id: "hammered-copper",       name: "Hammered Copper",       url: "bezels/hammered-copper.png" },
+  { id: "knitted-fiber",         name: "Knitted Fiber",         url: "bezels/knitted-fiber.png" },
+  { id: "marble",                name: "Marble",                url: "bezels/marble.png" },
+  { id: "matte-black",           name: "Matte Black",           url: "bezels/matte-black.png" },
+  { id: "matte-blue",            name: "Matte Blue",            url: "bezels/matte-blue.png" },
+  { id: "matte-gold",            name: "Matte Gold",            url: "bezels/matte-gold.png" },
+  { id: "matte-gray",            name: "Matte Gray",            url: "bezels/matte-gray.png" },
+  { id: "matte-red",             name: "Matte Red",             url: "bezels/matte-red.png" },
+  { id: "matte-tan",             name: "Matte Tan",             url: "bezels/matte-tan.png" },
+  { id: "molten-lava",           name: "Molten Lava",           url: "bezels/molten-lava.png" },
+  { id: "mother-of-pearl",       name: "Mother of Pearl",       url: "bezels/mother-of-pearl.png" },
+  { id: "nebula",                name: "Nebula",                url: "bezels/nebula.png" },
+  { id: "opal",                  name: "Opal",                  url: "bezels/opal.png" },
+  { id: "red-knitted-fiber",     name: "Red Knitted Fiber",     url: "bezels/red-knitted-fiber.png" },
+  { id: "ridged-steel",          name: "Ridged Steel",          url: "bezels/ridged-steel.png" },
+  { id: "rock",                  name: "Rock",                  url: "bezels/rock.png" },
+  { id: "scuffed-anodized",      name: "Scuffed Anodized",      url: "bezels/scuffed-anodized.png" },
+  { id: "silver",                name: "Silver",                url: "bezels/silver.png" },
+  { id: "silver-wood-grain",     name: "Silver Wood Grain",     url: "bezels/silver-wood-grain.png" },
+  { id: "soap-stone",            name: "Soap Stone",            url: "bezels/soap-stone.png" },
+  { id: "steel",                 name: "Steel",                 url: "bezels/steel.png" },
+  { id: "wicker",                name: "Wicker",                url: "bezels/wicker.png" },
+  { id: "wood-grain",            name: "Wood Grain",            url: "bezels/wood-grain.png" },
 ];
 const MAX_HISTORY = 20;
 
@@ -350,6 +351,11 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
   const isMkbTarget     = exportTarget === "mkb";
   const isControllerTarget = exportTarget !== null && !isMkbTarget;
   const [exportDone, setExportDone] = useState(false);
+  const [librarySaved, setLibrarySaved] = useState(false);
+  const [libraryError, setLibraryError] = useState(false);
+  const [showLibraryNamePrompt, setShowLibraryNamePrompt] = useState(false);
+  const [libraryNameDraft, setLibraryNameDraft] = useState("");
+  const [libraryMessage, setLibraryMessage] = useState<string | null>(null);
   const [isEncoding, setIsEncoding] = useState(false);
   const [encodingProgress, setEncodingProgress] = useState(0);
 
@@ -425,6 +431,36 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
   const [logoSelected, setLogoSelected] = useState(false);
 
   const logoDragRef = useRef<{ mode: "move" | "resize" | "rotate"; startX: number; startY: number; origPos: typeof logoPos; startAngle?: number } | null>(null);
+
+  // ── Home button exclusion zone ─────────────────────────────────────────────
+  // The C4D home button badge is treated as a circular no-go zone — no
+  // uploaded logo/image can be dragged, resized, or rotated on top of it.
+  // Uses proper rotated-rectangle-vs-circle math (closest point on the logo's
+  // rotated bounds to the home button's center) so this holds at any angle.
+  function logoOverlapsHomeButton(pos: typeof logoPos): boolean {
+    if (!homeButton) return false;
+    const cx = pos.x + pos.w / 2, cy = pos.y + pos.h / 2;
+    const rad = (-pos.rot * Math.PI) / 180;
+    const dx = homeButton.x - cx, dy = homeButton.y - cy;
+    // Home button center, transformed into the logo rectangle's local (unrotated) space
+    const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
+    const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
+    const clampedX = Math.max(-pos.w / 2, Math.min(pos.w / 2, localX));
+    const clampedY = Math.max(-pos.h / 2, Math.min(pos.h / 2, localY));
+    const closestDx = localX - clampedX, closestDy = localY - clampedY;
+    return Math.sqrt(closestDx * closestDx + closestDy * closestDy) < homeButton.size / 2;
+  }
+
+  // Applies a candidate logo position unless doing so would newly move the
+  // logo on top of the home button. If the logo is already overlapping for
+  // some other reason (e.g. a saved/pending placement), movement is still
+  // allowed freely so it never gets permanently stuck there.
+  function applyLogoPos(candidate: typeof logoPos) {
+    if (!homeButton) { setLogoPos(candidate); return; }
+    const alreadyOverlapping = logoOverlapsHomeButton(logoPos);
+    const wouldOverlap = logoOverlapsHomeButton(candidate);
+    if (alreadyOverlapping || !wouldOverlap) setLogoPos(candidate);
+  }
 
   function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -552,17 +588,17 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
     const dx = mx - drag.startX;
     const dy = my - drag.startY;
     if (drag.mode === "move") {
-      setLogoPos({ ...drag.origPos, x: drag.origPos.x + dx, y: drag.origPos.y + dy });
+      applyLogoPos({ ...drag.origPos, x: drag.origPos.x + dx, y: drag.origPos.y + dy });
     } else if (drag.mode === "resize") {
       const newW = Math.max(20, drag.origPos.w + dx * 1.5);
       const aspect = drag.origPos.h / drag.origPos.w;
-      setLogoPos({ ...drag.origPos, w: newW, h: Math.round(newW * aspect) });
+      applyLogoPos({ ...drag.origPos, w: newW, h: Math.round(newW * aspect) });
     } else if (drag.mode === "rotate") {
       const origCx = drag.origPos.x + drag.origPos.w / 2;
       const origCy = drag.origPos.y + drag.origPos.h / 2;
       const currentAngle = Math.atan2(my - origCy, mx - origCx) * 180 / Math.PI;
       const delta = currentAngle - (drag.startAngle ?? 0);
-      setLogoPos({ ...drag.origPos, rot: (drag.origPos.rot + delta + 360) % 360 });
+      applyLogoPos({ ...drag.origPos, rot: (drag.origPos.rot + delta + 360) % 360 });
     }
   }
 
@@ -581,15 +617,15 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
     const my = (e.clientY - rect.top) * scaleY;
     const dx = mx - drag.startX, dy = my - drag.startY;
     if (drag.mode === "move") {
-      setLogoPos({ ...drag.origPos, x: drag.origPos.x + dx, y: drag.origPos.y + dy });
+      applyLogoPos({ ...drag.origPos, x: drag.origPos.x + dx, y: drag.origPos.y + dy });
     } else if (drag.mode === "resize") {
       const newW = Math.max(20, drag.origPos.w + dx * 1.5);
-      setLogoPos({ ...drag.origPos, w: newW, h: Math.round(newW * (drag.origPos.h / drag.origPos.w)) });
+      applyLogoPos({ ...drag.origPos, w: newW, h: Math.round(newW * (drag.origPos.h / drag.origPos.w)) });
     } else if (drag.mode === "rotate") {
       const origCx = drag.origPos.x + drag.origPos.w / 2;
       const origCy = drag.origPos.y + drag.origPos.h / 2;
       const angle = Math.atan2(my - origCy, mx - origCx) * 180 / Math.PI;
-      setLogoPos({ ...drag.origPos, rot: (drag.origPos.rot + angle - (drag.startAngle ?? 0) + 360) % 360 });
+      applyLogoPos({ ...drag.origPos, rot: (drag.origPos.rot + angle - (drag.startAngle ?? 0) + 360) % 360 });
     }
   }
 
@@ -599,25 +635,41 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
     window.removeEventListener("mouseup", onLogoMouseUp);
   }
 
-  function bakeLogoToCanvas() {
-    const display = displayCanvasRef.current;
-    const source  = canvasRef.current;
-    if (!display || !source || !logoSrc || !logoImgRef.current) return;
+  /** Flattens whatever is currently placed — logo, bezels, home button, any
+   *  combination, or none of them — permanently into the working canvas.
+   *  Available as soon as an image is loaded, not gated behind having a logo. */
+  function bakeToCanvas() {
+    const source = canvasRef.current;
+    if (!source || !hasImage) return;
     pushHistory();
     const ctx = source.getContext("2d")!;
-    try {
-      ctx.clearRect(0, 0, source.width, source.height);
-      ctx.drawImage(display, 0, 0);
-      try { originalDataRef.current = ctx.getImageData(0, 0, source.width, source.height); } catch { }
-    } catch {
-      const { x, y, w, h, rot } = logoPos;
-      ctx.save(); ctx.globalAlpha = logoOpacity;
-      ctx.translate(x + w/2, y + h/2); ctx.rotate((rot * Math.PI) / 180);
-      if (logoBlur > 0) ctx.filter = `blur(${logoBlur}px)`;
-      ctx.drawImage(logoImgRef.current, -w/2, -h/2, w, h); ctx.restore();
+
+    // Logo first (if present) — same compositing as before, via the display
+    // canvas so blend mode/opacity/blur are respected.
+    if (logoSrc && logoImgRef.current) {
+      const display = displayCanvasRef.current;
+      try {
+        if (!display) throw new Error("no display canvas");
+        ctx.clearRect(0, 0, source.width, source.height);
+        ctx.drawImage(display, 0, 0);
+      } catch {
+        const { x, y, w, h, rot } = logoPos;
+        ctx.save(); ctx.globalAlpha = logoOpacity;
+        ctx.translate(x + w/2, y + h/2); ctx.rotate((rot * Math.PI) / 180);
+        if (logoBlur > 0) ctx.filter = `blur(${logoBlur}px)`;
+        ctx.drawImage(logoImgRef.current, -w/2, -h/2, w, h); ctx.restore();
+      }
     }
-    setLogoSrc(null); logoImgRef.current = null; setLogoSelected(false);
-    setIsVideo(false); setVideoUrl(null); videoFileRef.current = null;
+
+    // Then bezels and home button — same helpers the PNG/WebM export uses —
+    // drawn directly onto the working canvas so they're baked in for good.
+    bakeBezels(ctx, () => bakeHomeButton(ctx, () => {
+      try { originalDataRef.current = ctx.getImageData(0, 0, source.width, source.height); } catch { /* tainted canvas — ignore */ }
+      setLogoSrc(null); logoImgRef.current = null; setLogoSelected(false);
+      setIsVideo(false); setVideoUrl(null); videoFileRef.current = null;
+      setBezels([]); setSelectedBezel(null);
+      setHomeButton(null); homeButtonImgRef.current = null; setHomeButtonSelected(false);
+    }));
   }
 
 
@@ -1300,7 +1352,7 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
   async function handleBakeLogoToWebM() {
     const hasLogo   = !!(logoSrc && logoImgRef.current);
     const hasBezels = bezels.length > 0;
-    if (!videoFileRef.current || (!hasLogo && !hasBezels && !homeButton)) return;
+    if (!videoFileRef.current) return;
 
     // Init WebGL now — first time the user clicks Bake, not on page load
     if (hasLogo) ensureWebGL();
@@ -1605,12 +1657,14 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
     setTimeout(() => setExportDone(false), 1500);
   }
 
-  function handleExportToSkin() {
+  function handleExportToSkin(onBaked?: (dataUrl: string) => void) {
     const source = canvasRef.current;
     if (!source || !hasImage || !exportTarget) return;
 
-    // Routes the final payload to the correct callback
+    // Routes the final payload to the correct callback — either the caller's
+    // override (used by "Add to Library") or the normal skin-slot export.
     const finalize = (dataUrl: string) => {
+      if (onBaked) { onBaked(dataUrl); return; }
       if (isMkbTarget) {
         confirmMkbExport(dataUrl, mkbSlot);
       } else {
@@ -1690,6 +1744,53 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
       tctx.drawImage(canvas, 0, 0);
       bakeBezels(tctx, () => bakeHomeButton(tctx, () => finalize(tmp.toDataURL("image/png"))));
     }
+  }
+
+  /** Which custom-library section (if any) the current selection maps to.
+   *  Controller body only — not thumbsticks, which already have their own
+   *  dedicated library system in the Skins panel. */
+  function librarySectionForCurrentSelection(): string | null {
+    if (isMkbTarget) {
+      if (mkbSlot === "kbSkin") return "kb-body";
+      if (mkbSlot === "kbButtonsSkin") return "kb-keys";
+      if (mkbSlot === "mouseSkin") return "mouse";
+      return null;
+    }
+    if (isControllerTarget && exportSlot === "controllerSkin") {
+      return `body-${exportTarget}`;
+    }
+    return null;
+  }
+
+  function handleAddToLibrary() {
+    const section = librarySectionForCurrentSelection();
+    if (!section) return;
+    setLibraryNameDraft("");
+    setShowLibraryNamePrompt(true);
+  }
+
+  function confirmAddToLibrary() {
+    const section = librarySectionForCurrentSelection();
+    const name = libraryNameDraft.trim();
+    setShowLibraryNamePrompt(false);
+    if (!section || !name) return;
+    handleExportToSkin(async (dataUrl) => {
+      if (dataUrl.startsWith("blob:")) {
+        setLibraryMessage("A raw WebM without any bezel or logo baked on top can't be saved to the library (it won't survive a reload). Add a bezel or logo first, or export a still-frame PNG.");
+        setTimeout(() => setLibraryMessage(null), 4000);
+        return;
+      }
+      const saved = await addToCustomLibrary(section, name, dataUrl);
+      if (!saved) {
+        setLibraryError(true);
+        setTimeout(() => setLibraryError(false), 2500);
+        setLibraryMessage("Couldn't save to the library — the write failed (disk full, or a permissions issue). Nothing was saved.");
+        setTimeout(() => setLibraryMessage(null), 4000);
+        return;
+      }
+      setLibrarySaved(true);
+      setTimeout(() => setLibrarySaved(false), 1500);
+    });
   }
 
   const SLOT_LABELS: Record<ExportSlot, string> = {
@@ -1789,12 +1890,62 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
             ) : "Select a target to export"}
           </p>
 
-          <button onClick={handleExportToSkin} disabled={!hasImage || !exportTarget}
+          <button onClick={() => handleExportToSkin()} disabled={!hasImage || !exportTarget}
             className={`flex items-center justify-center gap-1.5 w-full text-xs px-2.5 py-2 rounded-md font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed ${exportDone ? "bg-green-600 text-white" : "bg-primary text-primary-foreground hover:opacity-90"}`}>
             <ArrowRightCircle size={12} /> {exportDone ? "✓ Exported!" : "Export to Skin Slot"}
           </button>
+
+          {librarySectionForCurrentSelection() && (
+            <button onClick={handleAddToLibrary} disabled={!hasImage}
+              className={`flex items-center justify-center gap-1.5 w-full text-xs px-2.5 py-2 rounded-md font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed border ${librarySaved ? "bg-green-600 text-white border-green-600" : libraryError ? "bg-destructive text-white border-destructive" : "bg-card border-border text-foreground hover:border-primary/50 hover:bg-primary/5"}`}>
+              {librarySaved ? "✓ Saved to Library!" : libraryError ? "✕ Not Saved" : "＋ Add to Library"}
+            </button>
+          )}
+          {libraryMessage && (
+            <p className="text-[10px] text-destructive leading-snug">{libraryMessage}</p>
+          )}
         </div>
       </div>
+
+      {/* ── Add to Library — name prompt (Electron doesn't support window.prompt) ── */}
+      {showLibraryNamePrompt && (
+        <div
+          style={{ position:"fixed", inset:0, zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center",
+            background:"rgba(0,0,0,0.55)", backdropFilter:"blur(4px)", WebkitBackdropFilter:"blur(4px)" }}
+          onClick={() => setShowLibraryNamePrompt(false)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background:"rgba(10,10,14,0.96)", border:"1px solid rgba(255,255,255,0.12)",
+            borderRadius:18, padding:"22px 24px", width:360, maxWidth:"90vw",
+            boxShadow:"0 24px 64px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.06)",
+            display:"flex", flexDirection:"column", gap:14,
+          }}>
+            <span style={{ fontSize:12, fontWeight:700, letterSpacing:"0.08em", color:"#fff", textTransform:"uppercase" }}>
+              Name this for the library
+            </span>
+            <input
+              autoFocus
+              value={libraryNameDraft}
+              onChange={e => setLibraryNameDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && libraryNameDraft.trim()) confirmAddToLibrary(); if (e.key === "Escape") setShowLibraryNamePrompt(false); }}
+              placeholder="e.g. Emerald Fade"
+              style={{
+                background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.15)",
+                borderRadius:8, padding:"8px 10px", color:"#fff", fontSize:13, outline:"none",
+              }}
+            />
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+              <button onClick={() => setShowLibraryNamePrompt(false)}
+                style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:8, padding:"7px 14px", color:"#aaa", fontSize:12, cursor:"pointer" }}>
+                Cancel
+              </button>
+              <button onClick={confirmAddToLibrary} disabled={!libraryNameDraft.trim()}
+                style={{ background: libraryNameDraft.trim() ? "#e40707" : "rgba(228,7,7,0.3)", border:"none", borderRadius:8, padding:"7px 14px", color:"#fff", fontSize:12, fontWeight:600, cursor: libraryNameDraft.trim() ? "pointer" : "not-allowed" }}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Right: toolbar + canvas */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -2239,8 +2390,8 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
 
             <Section label="Placement">
               <div className="grid grid-cols-2 gap-x-2 gap-y-1 mb-1.5">
-                {([["X", logoPos.x, (v: number) => setLogoPos(p => ({ ...p, x: v }))],
-                   ["Y", logoPos.y, (v: number) => setLogoPos(p => ({ ...p, y: v }))]] as const).map(([l, val, set]) => (
+                {([["X", logoPos.x, (v: number) => applyLogoPos({ ...logoPos, x: v })],
+                   ["Y", logoPos.y, (v: number) => applyLogoPos({ ...logoPos, y: v })]] as const).map(([l, val, set]) => (
                   <label key={l} className="flex items-center gap-1">
                     <span className="text-muted-foreground w-3">{l}</span>
                     <input type="number" value={Math.round(val as number)}
@@ -2255,7 +2406,7 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
                   <input type="number" value={Math.round(logoPos.w)}
                     onChange={e => {
                       const nw = Number(e.target.value);
-                      setLogoPos(p => ({ ...p, w: nw, h: lockAspect ? Math.round(nw * p.h / (p.w || 1)) : p.h }));
+                      applyLogoPos({ ...logoPos, w: nw, h: lockAspect ? Math.round(nw * logoPos.h / (logoPos.w || 1)) : logoPos.h });
                     }}
                     className="flex-1 min-w-0 text-[10px] bg-muted/30 border border-border rounded px-1 py-0.5 text-right" />
                 </label>
@@ -2264,7 +2415,7 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
                   <input type="number" value={Math.round(logoPos.h)}
                     onChange={e => {
                       const nh = Number(e.target.value);
-                      setLogoPos(p => ({ ...p, h: nh, w: lockAspect ? Math.round(nh * p.w / (p.h || 1)) : p.w }));
+                      applyLogoPos({ ...logoPos, h: nh, w: lockAspect ? Math.round(nh * logoPos.w / (logoPos.h || 1)) : logoPos.w });
                     }}
                     className="flex-1 min-w-0 text-[10px] bg-muted/30 border border-border rounded px-1 py-0.5 text-right" />
                 </label>
@@ -2275,7 +2426,7 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
                 <span className="text-muted-foreground">Lock aspect ratio</span>
               </label>
               <NumRow label="Rotation" value={Math.round(logoPos.rot)} unit="°" min={0} max={360} step={1}
-                onChange={v => setLogoPos(p => ({ ...p, rot: v }))} />
+                onChange={v => applyLogoPos({ ...logoPos, rot: v })} />
             </Section>
           </React.Fragment>) : (
             <div className="flex flex-col items-center justify-center gap-2 py-6 text-center text-muted-foreground/40">
@@ -2350,15 +2501,15 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
                   homeButtonImgRef.current = img;
                   const c = canvasRef.current;
                   const size = c ? Math.round(Math.min(c.width, c.height) * 0.09) : 100;
-                  setHomeButton({ src: "/c4d-home-button.png", x: c ? c.width * 0.5 : 200, y: c ? c.height * 0.65 : 300,
+                  setHomeButton({ src: "c4d-home-button.png", x: c ? c.width * 0.5 : 200, y: c ? c.height * 0.65 : 300,
                     size, hue: 0, brightness: 1, contrast: 1, saturate: 1 });
                   setHomeButtonSelected(true);
                 };
-                img.src = "/c4d-home-button.png";
+                img.src = "c4d-home-button.png";
               }}
                 disabled={!hasImage}
                 className="w-full flex items-center justify-center gap-2 text-xs px-2.5 py-2 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
-                <img src="/c4d-home-button.png" alt="C4D" style={{ width: 20, height: 20, objectFit: "contain", borderRadius: "50%" }} />
+                <img src="c4d-home-button.png" alt="C4D" style={{ width: 20, height: 20, objectFit: "contain", borderRadius: "50%" }} />
                 Place Home Button
               </button>
             ) : (
@@ -2402,17 +2553,15 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
         </div>
 
         {/* ── Bake actions — pinned to bottom ──────────────────────────────── */}
-        {(logoSrc && logoImgRef.current) || (isVideo && videoFileRef.current && (bezels.length > 0 || !!homeButton)) ? (
+        {hasImage ? (
           <div className="p-3 border-t border-border mt-auto space-y-2">
-            {logoSrc && logoImgRef.current && (
-              <button onClick={bakeLogoToCanvas}
+            {!isVideo && (
+              <button onClick={bakeToCanvas}
                 className="w-full flex items-center justify-center gap-1.5 text-xs px-2.5 py-2 rounded-md bg-primary text-primary-foreground font-medium hover:opacity-90 transition-all">
                 <Check size={12} /> Bake to Canvas (PNG)
               </button>
             )}
             {isVideo && videoFileRef.current && (
-              (logoSrc && logoImgRef.current) || bezels.length > 0 || !!homeButton
-            ) && (
               <button onClick={handleBakeLogoToWebM} disabled={isEncoding}
                 className="w-full flex items-center justify-center gap-1.5 text-xs px-2.5 py-2 rounded-md font-medium transition-all bg-violet-700 text-white hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed">
                 🎬 {isEncoding
@@ -2421,7 +2570,9 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
                     ? "Bake Logo + Bezels to WebM"
                     : logoSrc && logoImgRef.current
                       ? "Bake Logo to WebM"
-                      : "Bake Bezels to WebM"}
+                      : bezels.length > 0 || !!homeButton
+                        ? "Bake Bezels to WebM"
+                        : "Bake to WebM"}
               </button>
             )}
           </div>
@@ -2442,9 +2593,15 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
           }}>
             {/* Header */}
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <span style={{ fontSize:12, fontWeight:700, letterSpacing:"0.08em", color:"#fff", textTransform:"uppercase" }}>
-                Bezel Library
-              </span>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:12, fontWeight:700, letterSpacing:"0.08em", color:"#fff", textTransform:"uppercase" }}>
+                  Bezel Library
+                </span>
+                <span style={{
+                  fontSize:10, fontWeight:700, color:"#aaa",
+                  background:"rgba(255,255,255,0.08)", borderRadius:999, padding:"1px 6px", lineHeight:1.4,
+                }}>{BEZEL_LIBRARY.length}</span>
+              </div>
               <button onClick={() => setShowBezelPicker(false)}
                 style={{ background:"none", border:"none", color:"#888", cursor:"pointer", fontSize:20, lineHeight:1 }}>×</button>
             </div>
@@ -2532,7 +2689,7 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
             display: "flex", flexDirection: "column", alignItems: "center", gap: 16,
           }}>
             <video
-              src="/logoanimation.webm"
+              src="logoanimation.webm"
               autoPlay loop muted playsInline
               style={{ width: 240, height: "auto", display: "block" }}
             />

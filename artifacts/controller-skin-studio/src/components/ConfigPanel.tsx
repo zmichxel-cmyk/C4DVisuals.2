@@ -270,8 +270,10 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
                 { id: "particles",      label: "Particles"     },
                 { id: "fire",           label: "🔥 Fire"       },
                 { id: "reactive",       label: "⚡ Reactive"   },
-                { id: "orbitTrail",     label: "🌀 Orbit Trail" },
-                { id: "lightningStrike",label: "⚡ Lightning"  },
+                { id: "reactiveReverse",label: "🔄 Reverse"    },
+                { id: "reactiveElectric",label:"🌩️ Electric"  },
+                { id: "reactiveFire",   label: "🔥 Reactive Fire" },
+                { id: "particleBurst",  label: "💥 Burst"      },
               ] as const).map(p => (
                 <button key={p.id} onClick={() => onChange({ bodyEffect: p.id })}
                   className={`text-xs px-1.5 py-1 rounded border transition-all ${config.bodyEffect === p.id ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}>
@@ -290,7 +292,7 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
                 {config.bodyEffect === "pulseGlow" && (
                   <ColorField label="Color" value={config.pulseGlowColor} onChange={v => onChange({ pulseGlowColor: v })} />
                 )}
-                {(config.bodyEffect === "reactive" || config.bodyEffect === "orbitTrail" || config.bodyEffect === "lightningStrike" || config.bodyEffect === "crystalFracture") && (
+                {(config.bodyEffect === "reactive" || config.bodyEffect === "reactiveReverse" || config.bodyEffect === "particleBurst" || config.bodyEffect === "crystalFracture") && (
                   <>
                     <Toggle label="Rainbow" value={config.reactiveRippleRainbow} onChange={v => onChange({ reactiveRippleRainbow: v })} />
                     {!config.reactiveRippleRainbow && (
@@ -298,10 +300,14 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
                     )}
                   </>
                 )}
-                {config.bodyEffect === "fire" && (
+                {(config.bodyEffect === "fire" || config.bodyEffect === "reactiveFire") && (
                   <>
                     <ColorField label="Fire Color 1" value={config.fireColor1} onChange={v => onChange({ fireColor1: v })} />
                     <ColorField label="Fire Color 2" value={config.fireColor2} onChange={v => onChange({ fireColor2: v })} />
+                  </>
+                )}
+                {config.bodyEffect === "fire" && (
+                  <>
                     <Slider label="Glow Speed" value={config.fireGlowSpeed} min={1} max={20} step={0.5}
                       display={`${config.fireGlowSpeed}s`} onChange={v => onChange({ fireGlowSpeed: v })} />
                     <Slider label="Ember Speed" value={config.fireEmberSpeed} min={1} max={20} step={0.5}
@@ -317,14 +323,13 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
             <Toggle label="Enable RGB silhouette" value={config.rgbBodyEnabled} onChange={v => onChange({ rgbBodyEnabled: v })} />
             {config.rgbBodyEnabled && (
               <>
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-2 gap-1.5">
                   {([
                     { id: "wave",      label: "Wave"      },
                     { id: "breathing", label: "Breathing" },
-                    { id: "reactive",  label: "Reactive"  },
                   ] as const).map(m => (
                     <button key={m.id} onClick={() => onChange({ rgbBodyMode: m.id })}
-                      className={`text-xs px-1.5 py-1 rounded border transition-all ${config.rgbBodyMode === m.id ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}>
+                      className={`text-xs px-2 py-1.5 rounded border transition-all ${config.rgbBodyMode === m.id ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}>
                       {m.label}
                     </button>
                   ))}
@@ -340,18 +345,11 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
                       <ColorField label="Wave Color" value={config.rgbBodyWaveColor} onChange={v => onChange({ rgbBodyWaveColor: v })} />
                     )}
                   </>
-                ) : config.rgbBodyMode === "breathing" ? (
+                ) : (
                   <>
                     <Toggle label="Rainbow (Breathing)" value={config.rgbBodyBreathingRainbow} onChange={v => onChange({ rgbBodyBreathingRainbow: v })} />
                     {!config.rgbBodyBreathingRainbow && (
                       <ColorField label="Breathing Color" value={config.rgbBodyBreathingColor} onChange={v => onChange({ rgbBodyBreathingColor: v })} />
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <Toggle label="Rainbow (Reactive)" value={config.rgbBodyReactiveRainbow} onChange={v => onChange({ rgbBodyReactiveRainbow: v })} />
-                    {!config.rgbBodyReactiveRainbow && (
-                      <ColorField label="Ripple Color" value={config.rgbBodyReactiveColor} onChange={v => onChange({ rgbBodyReactiveColor: v })} />
                     )}
                   </>
                 )}

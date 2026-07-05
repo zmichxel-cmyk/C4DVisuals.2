@@ -5,13 +5,20 @@ import { WATERMARK_DATA_URL } from "./watermarkData";
 const DEAD_ZONE = 0.06;
 
 async function toDataUrl(url: string): Promise<string> {
-  const absUrl = url.startsWith("http") || url.startsWith("blob:") || url.startsWith("data:")
+  // fetch() resolves relative URLs against the current document on its own —
+  // manually prepending window.location.origin used to be needed, but breaks
+  // under Electron's file:// protocol (origin serializes as the literal
+  // string "file://" with no path, producing "file:///sticks/x.png" instead
+  // of the correct location). Stripping a leading slash and letting fetch()
+  // resolve it naturally works correctly in both the dev server and the
+  // packaged app.
+  const resolvedUrl = url.startsWith("http") || url.startsWith("blob:") || url.startsWith("data:")
     ? url
-    : window.location.origin + (url.startsWith("/") ? url : "/" + url);
+    : url.startsWith("/") ? url.slice(1) : url;
   try {
-    const resp = await fetch(absUrl);
+    const resp = await fetch(resolvedUrl);
     if (!resp.ok) {
-      console.error(`[exportHtml] Failed to fetch "${absUrl}" — status ${resp.status}`);
+      console.error(`[exportHtml] Failed to fetch "${resolvedUrl}" — status ${resp.status}`);
       return "";
     }
     const blob = await resp.blob();
@@ -22,7 +29,7 @@ async function toDataUrl(url: string): Promise<string> {
       reader.readAsDataURL(blob);
     });
   } catch (err) {
-    console.error(`[exportHtml] Failed to fetch "${absUrl}":`, err);
+    console.error(`[exportHtml] Failed to fetch "${resolvedUrl}":`, err);
     return "";
   }
 }
@@ -204,12 +211,8 @@ export async function generateExportHtml(config: ControllerConfig, overrides: La
   const RGB_BODY_SPEED = config.rgbBodySpeed;
   const RGB_BODY_MODE = config.rgbBodyMode;
   const RGB_BODY_INTENSITY = config.rgbBodyIntensity;
-  const RGB_BODY_COLOR = config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingColor
-    : config.rgbBodyMode === "reactive" ? config.rgbBodyReactiveColor
-    : config.rgbBodyWaveColor;
-  const RGB_BODY_RAINBOW = config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingRainbow
-    : config.rgbBodyMode === "reactive" ? config.rgbBodyReactiveRainbow
-    : config.rgbBodyWaveRainbow;
+  const RGB_BODY_COLOR = config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingColor : config.rgbBodyWaveColor;
+  const RGB_BODY_RAINBOW = config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingRainbow : config.rgbBodyWaveRainbow;
 
   // ── Shared button position/press-state data for reactive body effects
   //    (reactive ripple, orbit trail, lightning strike, RGB body "reactive"
@@ -355,16 +358,15 @@ export async function generateExportHtml(config: ControllerConfig, overrides: La
 
   #controller { position:relative; width:100%; height:100%; filter:blur(4px); transition:filter 0.4s ease; }
   #controller.connected { filter:none; }
-  #controller-skin { position:absolute; inset:0; width:100%; height:100%; background:${controllerBg}; pointer-events:none; filter:${(() => {
-    if (!config.showShadow) return "none";
-    const rad = (config.shadowAngle * Math.PI) / 180;
-    const dist = 16;
-    const x = Math.round(Math.sin(rad) * dist);
-    const y = Math.round(-Math.cos(rad) * dist);
-    const a = config.shadowIntensity;
-    return `drop-shadow(${x}px ${y}px 24px rgba(0,0,0,${a})) drop-shadow(${Math.round(x*0.4)}px ${Math.round(y*0.4)}px 8px rgba(0,0,0,${Math.min(a+0.1,1)}))`;
-  })()}; }
+  #controller-skin { position:absolute; inset:0; width:100%; height:100%; background:${controllerBg}; pointer-events:none; }
   #controller-video { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+  /* Drop shadow — a standalone silhouette layer rendered BEHIND both the RGB
+     glow and the controller art (see markup order below). Previously this was
+     a filter:drop-shadow() on #controller-skin itself; since that element
+     paints above #rgb-body in stacking order, the dark shadow silhouette was
+     compositing directly over the glow and dimming it heavily. Rendering the
+     shadow as its own bottom-most layer keeps it fully independent. */
+  .controller-shadow-layer { position:absolute; inset:0; width:100%; height:100%; background:${controllerBg}; pointer-events:none; }
 
   /* Wrapper: holds position/size; glow filter applied here so masked children don't clip drop-shadow */
   .btn-wrap {
@@ -455,6 +457,15 @@ export async function generateExportHtml(config: ControllerConfig, overrides: La
 </head>
 <body>
 <div id="controller">
+  ${config.showShadow ? (() => {
+    const rad = (config.shadowAngle * Math.PI) / 180;
+    const dist = 16;
+    const x = Math.round(Math.sin(rad) * dist);
+    const y = Math.round(-Math.cos(rad) * dist);
+    const a = config.shadowIntensity;
+    return `<div class="controller-shadow-layer" style="filter:brightness(0) blur(24px);opacity:${a};transform:translate(${x}px,${y}px)"></div>
+  <div class="controller-shadow-layer" style="filter:brightness(0) blur(8px);opacity:${Math.min(a+0.1,1)};transform:translate(${Math.round(x*0.4)}px,${Math.round(y*0.4)}px)"></div>`;
+  })() : ""}
   ${RGB_BODY_ENABLED ? `<div id="rgb-body"><canvas id="rgb-body-canvas"></canvas></div>` : ""}
   <div id="controller-skin"></div>
   ${isVideoSkin ? `<video id="controller-video" src="${skinDataUrl}" autoplay ${config.controllerSkinLoop ? "loop" : ""} muted playsinline></video>` : ""}
@@ -607,10 +618,6 @@ ${config.showWatermark ? `` : ""}
     var COLOR_B = ${parseInt(RGB_BODY_COLOR.slice(5, 7), 16) || 7};
     var t = 0;
     var started = false;
-    // "reactive" mode state — ripples spawned on button press, reusing the
-    // shared pressedButtons/btnPositions/buttonHWHH from the outer scope.
-    var reactiveRipples = [];
-    var reactivePrevPressed = {};
 
     function getC(hue, alpha){
       if(RAINBOW){
@@ -639,51 +646,17 @@ ${config.showWatermark ? `` : ""}
         if(MODE === 'breathing'){
           // Full-bright color that cycles hue over time while pulsing in/out — never blank
           var raw = 0.5 + 0.5*Math.sin(t*2.5);
-          var pulse = 0.3 + 0.7*raw;
+          var pulse = 0.55 + 0.45*raw;
           var hue = RAINBOW ? t*0.08 : 0;
           ctx.fillStyle = getC(hue, INTENSITY * pulse);
           ctx.fillRect(0,0,w,h);
-        } else if(MODE === 'reactive'){
-          // Reactive — a colored ripple expands outward from each button
-          // the moment it's pressed, fading out as it grows.
-          var rippleLife = Math.max(SPEED, 0.5) * 0.22;
-          reactiveRipples = reactiveRipples.filter(function(r){ return t - r.startT < rippleLife; });
-          for(var bidx in pressedButtons){
-            if(pressedButtons[bidx] && !reactivePrevPressed[bidx]){
-              var bpos = btnPositions[bidx];
-              if(bpos){
-                var bhwhh = buttonHWHH(bpos, w);
-                reactiveRipples.push({cx:(bpos.x/100)*w, cy:(bpos.y/100)*h, startT:t, edgeR:Math.min(bhwhh[0],bhwhh[1])});
-              }
-            }
-          }
-          reactivePrevPressed = {};
-          for(var pbidx in pressedButtons) reactivePrevPressed[pbidx] = pressedButtons[pbidx];
-
-          for(var ri=0; ri<reactiveRipples.length; ri++){
-            var rrip = reactiveRipples[ri];
-            var rage = t - rrip.startT;
-            var rfrac = rage / rippleLife;
-            var rR = rrip.edgeR + rfrac * Math.max(w,h) * 1.3;
-            var rT = Math.max(w,h) * 0.06;
-            var ralpha = Math.max(0, (1-rfrac) * INTENSITY);
-            var rhue = (((rage/rippleLife)*300 + (rrip.cx/w)*120)%360+360)%360;
-            var rgrad = ctx.createRadialGradient(rrip.cx, rrip.cy, Math.max(0, rR-rT), rrip.cx, rrip.cy, rR+rT);
-            rgrad.addColorStop(0, getC(rhue, 0));
-            rgrad.addColorStop(0.3, getC(rhue, ralpha*0.5));
-            rgrad.addColorStop(0.5, getC(rhue, ralpha));
-            rgrad.addColorStop(0.7, getC(rhue, ralpha*0.5));
-            rgrad.addColorStop(1, getC(rhue, 0));
-            ctx.fillStyle = rgrad;
-            ctx.fillRect(0,0,w,h);
-          }
         } else {
           // Wave — smoothly blended hue bands via a triangle-wave hue path
           // (no sawtooth 360->0 jump, so there's no hard color-reversal seam),
           // with a continuous brightness pulse layered on top
           var repeats = 1;
           var pulseRaw = 0.5 + 0.5*Math.sin(t*3);
-          var pulse2 = 0.25 + 0.75*pulseRaw;
+          var pulse2 = 0.55 + 0.45*pulseRaw;
           var grad = ctx.createLinearGradient(0,0,w,0);
           var steps = 120;
           for(var i=0; i<=steps; i++){
@@ -762,8 +735,10 @@ ${config.showWatermark ? `` : ""}
       else if(EFFECT === 'pulseGlow') initPulseGlow();
       else if(EFFECT === 'fire') initFire();
       else if(EFFECT === 'reactive') initReactive();
-      else if(EFFECT === 'orbitTrail') initOrbitTrail();
-      else if(EFFECT === 'lightningStrike') initLightningStrike();
+      else if(EFFECT === 'reactiveReverse') initReactiveReverse();
+      else if(EFFECT === 'particleBurst') initParticleBurst();
+      else if(EFFECT === 'reactiveElectric') initReactiveElectric();
+      else if(EFFECT === 'reactiveFire') initReactiveFire();
     }
 
     var REACTIVE_COLOR = '${config.reactiveRippleColor || "#ffffff"}';
@@ -822,94 +797,169 @@ ${config.showWatermark ? `` : ""}
       tick();
     }
 
-    // ── Orbit Trail — particles spiral outward with conservation of
-    //    angular momentum (ω ∝ 1/r²), giving natural deceleration ──
-    function genOrbitParticles(n, maxR, life, hw, hh){
-      var arr = [];
-      for(var i=0;i<n;i++){
-        var angle0 = (i/n)*Math.PI*2 + (Math.random()-0.5)*0.4;
-        var ca = Math.abs(Math.cos(angle0)), sa = Math.abs(Math.sin(angle0));
-        var r0 = (ca<1e-9?hh:sa<1e-9?hw:Math.min(hw/ca,hh/sa)) + Math.random()*3;
-        arr.push({angle0:angle0, omega0:4.5+Math.random()*3.5, vr:maxR*(0.6+Math.random()*0.3)/life, r0:r0, hueOff:(i/n)*360, width:1.2+Math.random()*1.8});
-      }
-      return arr;
-    }
-    function orbitXY(p, age, cx, cy){
-      var r = p.r0 + p.vr * Math.max(age, 0);
-      var theta = p.angle0 + (p.omega0*p.r0/p.vr) * (1 - p.r0/r);
-      return [cx + r*Math.cos(theta), cy + r*Math.sin(theta)];
-    }
-    function initOrbitTrail(){
-      var events = [];
+    // ── Reactive Reverse — mirror of the reactive ripple: instead of a ring
+    //    expanding outward from the button, it starts big and far away and
+    //    converges inward, brightening as it closes in on the press point. ──
+    function initReactiveReverse(){
+      var ripples = [];
       var prevPressed = {};
-      var ot = 0;
+      var rt = 0;
       function tick(){
-        ot += 0.016;
+        rt += 0.016;
         var w=canvas.width, h=canvas.height;
         ctx.clearRect(0,0,w,h);
-        var life = Math.max(SPEED, 0.5) * 0.28;
-        events = events.filter(function(e){ return ot - e.startT < e.life; });
+        var rippleLife = Math.max(SPEED, 0.5) * 0.22;
+        ripples = ripples.filter(function(r){ return rt - r.startT < rippleLife; });
         for(var idx in pressedButtons){
           if(pressedButtons[idx] && !prevPressed[idx]){
             var pos = btnPositions[idx];
             if(pos){
               var hwhh = buttonHWHH(pos, w);
-              events.push({cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:ot, life:life,
-                particles: genOrbitParticles(12, Math.max(w,h), life, hwhh[0], hwhh[1])});
+              ripples.push({cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:rt, edgeR:Math.min(hwhh[0],hwhh[1])});
             }
           }
         }
         prevPressed = {};
         for(var k in pressedButtons) prevPressed[k] = pressedButtons[k];
 
-        var TRAIL = 0.22;
+        var maxSpread = Math.max(w,h) * 0.7;
+        for(var i=0;i<ripples.length;i++){
+          var rip = ripples[i];
+          var age = rt - rip.startT;
+          var frac = Math.min(1, age / rippleLife);
+          var R = rip.edgeR + (1-frac) * maxSpread;
+          var T = Math.max(w,h) * 0.06;
+          var alpha = frac * INTENSITY;
+          var hue = (((age/rippleLife)*300 + (rip.cx/w)*120)%360+360)%360;
+          var grd = ctx.createRadialGradient(rip.cx, rip.cy, Math.max(0, R-T), rip.cx, rip.cy, R+T);
+          grd.addColorStop(0, reactiveGetC(hue, 0));
+          grd.addColorStop(0.3, reactiveGetC(hue, alpha*0.5));
+          grd.addColorStop(0.5, reactiveGetC(hue, alpha));
+          grd.addColorStop(0.7, reactiveGetC(hue, alpha*0.5));
+          grd.addColorStop(1, reactiveGetC(hue, 0));
+          ctx.fillStyle = grd;
+          ctx.fillRect(0,0,w,h);
+        }
+        requestAnimationFrame(tick);
+      }
+      tick();
+    }
+
+    // ── Particle Burst — a one-shot explosion of glowing particles flying
+    //    outward from the pressed button's edge, decelerating and fading out.
+    //    Position is a closed-form function of age (exponentially-decaying
+    //    velocity) plus a perpendicular jitter term for organic wander. Sizes/
+    //    drag are drawn from weighted tiers (spark/ember/chunk), the same
+    //    trick the fire embers use to avoid every particle looking identical.
+    //    Velocity is derived from a target travel distance (maxDist = v0/drag)
+    //    scaled to canvas size rather than picked independently of drag —
+    //    otherwise faster tiers just brake harder and every tier caps out at
+    //    nearly the same tiny radius regardless of controller size.
+    //    Mirrors BodyEffectOverlay.tsx exactly. ──
+    function genBurstParticles(cx,cy,hw,hh,canvasMax,n){
+      var arr = [];
+      for(var i=0;i<n;i++){
+        // Most particles fan out evenly and stay close to the button. A
+        // minority ("wild" ones) get both a wider random angle and extra
+        // travel distance, so only some visibly rocket off further/more
+        // randomly — not all of them.
+        var isWild = Math.random() < 0.22;
+        var angle = (i/n)*Math.PI*2 + (Math.random()-0.5)*(Math.PI*2/n);
+        if(isWild) angle += (Math.random()-0.5) * 1.6;
+
+        var ca=Math.abs(Math.cos(angle)), sa=Math.abs(Math.sin(angle));
+        var edgeR = ca<1e-9?hh:sa<1e-9?hw:Math.min(hw/ca,hh/sa);
+        var x0 = cx+Math.cos(angle)*edgeR, y0 = cy+Math.sin(angle)*edgeR;
+
+        var roll = Math.random();
+        var size, maxDist, drag;
+        if(roll < 0.35){
+          size = 0.8 + Math.random()*1.0;                    // spark — tiny, fast, snaps to a stop
+          maxDist = canvasMax * (0.04 + Math.random()*0.05);
+          drag = 3.0 + Math.random()*2.0;
+        } else if(roll < 0.75){
+          size = 1.8 + Math.random()*2.2;                    // ember — standard
+          maxDist = canvasMax * (0.06 + Math.random()*0.06);
+          drag = 1.8 + Math.random()*1.4;
+        } else {
+          size = 3.2 + Math.random()*3.2;                    // chunk — big, slow, lingers
+          maxDist = canvasMax * (0.09 + Math.random()*0.08);
+          drag = 1.0 + Math.random()*0.8;
+        }
+        if(isWild) maxDist *= 1.8 + Math.random()*1.4;
+        var speed = maxDist * drag;
+
+        arr.push({
+          x0:x0, y0:y0, angle:angle, vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed,
+          size:size, drag:drag, hueOff:(i/n)*360+Math.random()*30,
+          jitterAmp: 4+Math.random()*14,
+          jitterFreq: 3+Math.random()*6,
+          jitterPhase: Math.random()*Math.PI*2,
+          flickerSpeed: 2+Math.random()*6,
+          flickerPhase: Math.random()*Math.PI*2
+        });
+      }
+      return arr;
+    }
+    function initParticleBurst(){
+      var events = [];
+      var prevPressed = {};
+      var bt = 0;
+      var brr=parseInt(REACTIVE_COLOR.slice(1,3),16), brg=parseInt(REACTIVE_COLOR.slice(3,5),16), brb=parseInt(REACTIVE_COLOR.slice(5,7),16);
+      function tick(){
+        bt += 0.016;
+        var w=canvas.width, h=canvas.height;
+        ctx.clearRect(0,0,w,h);
+        var life = Math.max(SPEED, 0.5) * 0.5;
+        events = events.filter(function(e){ return bt - e.startT < e.life; });
+        for(var idx in pressedButtons){
+          if(pressedButtons[idx] && !prevPressed[idx]){
+            var pos = btnPositions[idx];
+            if(pos){
+              var hwhh = buttonHWHH(pos, w);
+              var n = 14 + Math.floor(Math.random()*10);
+              events.push({startT:bt, life:life, particles: genBurstParticles((pos.x/100)*w, (pos.y/100)*h, hwhh[0], hwhh[1], Math.max(w,h), n)});
+            }
+          }
+        }
+        prevPressed = {};
+        for(var k in pressedButtons) prevPressed[k] = pressedButtons[k];
+
         for(var ei=0; ei<events.length; ei++){
           var evt = events[ei];
-          var age = ot - evt.startT;
-          var evtFrac = age / evt.life;
-          var fade = Math.max(0, (1-evtFrac) * INTENSITY);
+          var age = bt - evt.startT;
+          var tn = Math.min(1, age/evt.life);
+          var fadeAlpha = Math.max(0, 1 - Math.pow(tn, 1.6)) * INTENSITY;
+          if(fadeAlpha <= 0.01) continue;
+
           for(var pi=0; pi<evt.particles.length; pi++){
             var p = evt.particles[pi];
-            var trailAge = Math.max(0, age - TRAIL);
-            var STEPS = 48;
-            var hue = (p.hueOff + age*140) % 360;
-            var getCol = function(a){ return reactiveGetC(hue, a); };
-            var txy = orbitXY(p, trailAge, evt.cx, evt.cy);
-            var hxy = orbitXY(p, age, evt.cx, evt.cy);
+            var decay = 1 - Math.exp(-p.drag*age);
+            var px = p.x0 + (p.vx/p.drag)*decay;
+            var py = p.y0 + (p.vy/p.drag)*decay;
 
-            ctx.beginPath();
-            var first = true;
-            for(var i=0;i<=STEPS;i++){
-              var tt = trailAge + (age-trailAge)*(i/STEPS);
-              var xy = orbitXY(p, tt, evt.cx, evt.cy);
-              if(first){ ctx.moveTo(xy[0], xy[1]); first = false; } else ctx.lineTo(xy[0], xy[1]);
-            }
-            var grd = ctx.createLinearGradient(txy[0], txy[1], hxy[0], hxy[1]);
-            grd.addColorStop(0, getCol(0));
-            grd.addColorStop(0.5, getCol(fade*0.25));
-            grd.addColorStop(1, getCol(fade*0.7));
-            ctx.strokeStyle = grd;
-            ctx.lineWidth = p.width * 3.5;
-            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-            ctx.shadowBlur = 10; ctx.shadowColor = getCol(fade*0.6);
-            ctx.stroke();
+            var perpX = -Math.sin(p.angle), perpY = Math.cos(p.angle);
+            var jitter = Math.sin(age*p.jitterFreq + p.jitterPhase) * p.jitterAmp * Math.min(1, age*3) * (1-tn);
+            px += perpX * jitter;
+            py += perpY * jitter;
 
-            ctx.beginPath();
-            first = true;
-            for(var i2=0;i2<=STEPS;i2++){
-              var tt2 = trailAge + (age-trailAge)*(i2/STEPS);
-              var xy2 = orbitXY(p, tt2, evt.cx, evt.cy);
-              if(first){ ctx.moveTo(xy2[0], xy2[1]); first = false; } else ctx.lineTo(xy2[0], xy2[1]);
-            }
-            var grd2 = ctx.createLinearGradient(txy[0], txy[1], hxy[0], hxy[1]);
-            grd2.addColorStop(0, getCol(0));
-            grd2.addColorStop(0.6, getCol(fade*0.5));
-            grd2.addColorStop(1, getCol(fade));
-            ctx.strokeStyle = grd2;
-            ctx.lineWidth = p.width * 0.9;
-            ctx.shadowBlur = 4; ctx.shadowColor = getCol(fade);
-            ctx.stroke();
-            ctx.shadowBlur = 0;
+            var flicker = 0.7 + 0.3*Math.sin(age*p.flickerSpeed + p.flickerPhase);
+            var size = p.size * (1 - 0.35*tn) * flicker;
+            if(size <= 0.15) continue;
+            var alpha = fadeAlpha * flicker;
+
+            var hue = REACTIVE_RAINBOW ? (p.hueOff + age*220)%360 : 0;
+            var colorC = REACTIVE_RAINBOW ? 'hsla('+hue+',100%,62%,' : 'rgba('+brr+','+brg+','+brb+',';
+
+            ctx.save();
+            ctx.shadowBlur=8; ctx.shadowColor = colorC+(alpha*0.8)+')';
+            ctx.fillStyle = colorC+alpha+')';
+            ctx.beginPath(); ctx.arc(px, py, size, 0, Math.PI*2); ctx.fill();
+
+            ctx.shadowBlur=0;
+            ctx.fillStyle = 'rgba(255,255,255,'+(alpha*0.7)+')';
+            ctx.beginPath(); ctx.arc(px, py, size*0.4, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
           }
         }
         requestAnimationFrame(tick);
@@ -917,104 +967,210 @@ ${config.showWatermark ? `` : ""}
       tick();
     }
 
-    // ── Lightning Strike — recursive midpoint displacement for a jagged,
-    //    fractal bolt look ──
-    function subdivideBolt(x1,y1,x2,y2,rough,depth,maxD,segs){
-      var dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy);
-      if(depth>=maxD || len<2){ segs.push({x1:x1,y1:y1,x2:x2,y2:y2,depth:Math.min(depth,2)}); return; }
-      var px=-dy/len, py=dx/len, off=(Math.random()-0.5)*rough*len;
-      var mx=(x1+x2)/2+px*off, my=(y1+y2)/2+py*off;
-      subdivideBolt(x1,y1,mx,my,rough*0.65,depth+1,maxD,segs);
-      subdivideBolt(mx,my,x2,y2,rough*0.65,depth+1,maxD,segs);
-      if(depth<2 && Math.random()<0.55-depth*0.1){
-        var bAng=Math.atan2(dy,dx)+(Math.random()<0.5?1:-1)*(0.3+Math.random()*0.6);
-        var bLen=len*(0.3+Math.random()*0.5);
-        subdivideBolt(mx,my, mx+Math.cos(bAng)*bLen, my+Math.sin(bAng)*bLen, rough*0.6, depth+2, maxD-1, segs);
-      }
-    }
-    function genLightning(cx,cy,w,h,hw,hh){
-      var segs=[];
-      var maxR=Math.max(w,h);
-      var arms=2+Math.floor(Math.random()*2);
-      var base=Math.random()*Math.PI*2;
-      for(var a=0;a<arms;a++){
-        var ang=base+(a/arms)*Math.PI*2+(Math.random()-0.5)*0.6;
-        var ca=Math.abs(Math.cos(ang)), sa=Math.abs(Math.sin(ang));
-        var edgeR = ca<1e-9?hh:sa<1e-9?hw:Math.min(hw/ca,hh/sa);
-        var sx=cx+Math.cos(ang)*edgeR, sy=cy+Math.sin(ang)*edgeR;
-        var len=maxR*(0.5+Math.random()*0.45)-edgeR;
-        subdivideBolt(sx,sy,sx+Math.cos(ang)*len,sy+Math.sin(ang)*len,0.45,0,6,segs);
-      }
-      return segs;
-    }
-    function initLightningStrike(){
+    // ── Reactive Electric — a crackling, jagged ring (re-jittered every frame
+    //    for a "static" flicker) with a few short tangent sparks, instead of a
+    //    smooth expanding wave. Mirrors BodyEffectOverlay.tsx exactly. ──
+    function initReactiveElectric(){
       var events = [];
       var prevPressed = {};
-      var lt = 0;
-      var rr=parseInt(REACTIVE_COLOR.slice(1,3),16), rg=parseInt(REACTIVE_COLOR.slice(3,5),16), rb=parseInt(REACTIVE_COLOR.slice(5,7),16);
+      var et = 0;
       function tick(){
-        lt += 0.016;
+        et += 0.016;
         var w=canvas.width, h=canvas.height;
         ctx.clearRect(0,0,w,h);
-        var life = Math.max(SPEED, 0.5) * 0.1;
-        events = events.filter(function(e){ return lt - e.startT < e.life; });
+        var life = Math.max(SPEED, 0.5) * 0.22;
+        events = events.filter(function(e){ return et - e.startT < life; });
+        for(var idx in pressedButtons){
+          if(pressedButtons[idx] && !prevPressed[idx]){
+            var pos = btnPositions[idx];
+            if(pos) events.push({cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:et, life:life, seed: Math.random()*1000});
+          }
+        }
+        prevPressed = {};
+        for(var k in pressedButtons) prevPressed[k] = pressedButtons[k];
+
+        var maxSpread = Math.max(w,h) * 0.85;
+        var SEGMENTS = 28;
+        for(var ei=0; ei<events.length; ei++){
+          var evt = events[ei];
+          var age = et - evt.startT;
+          var frac = Math.min(1, age / evt.life);
+          var R = frac * maxSpread;
+          var alpha = Math.max(0, 1-frac) * INTENSITY;
+          if(alpha <= 0.02 || R < 1) continue;
+
+          ctx.save();
+          ctx.beginPath();
+          for(var s=0; s<=SEGMENTS; s++){
+            var ang = (s/SEGMENTS)*Math.PI*2;
+            var jitter = (Math.sin(ang*7 + evt.seed + et*40) * 0.5 + (Math.random()-0.5)) * R * 0.18;
+            var rr2 = Math.max(2, R + jitter);
+            var x = evt.cx + Math.cos(ang)*rr2, y = evt.cy + Math.sin(ang)*rr2;
+            if(s===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+          }
+          ctx.closePath();
+          ctx.strokeStyle = 'rgba(140,210,255,'+alpha+')';
+          ctx.lineWidth = 2;
+          ctx.shadowBlur=16; ctx.shadowColor = 'rgba(160,220,255,'+(alpha*0.9)+')';
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,255,255,'+(alpha*0.8)+')';
+          ctx.lineWidth = 0.8;
+          ctx.shadowBlur=4;
+          ctx.stroke();
+
+          for(var kk=0; kk<5; kk++){
+            var ang2 = (((evt.seed*13 + kk*71) % 360) * Math.PI/180) + et*3;
+            var bx = evt.cx + Math.cos(ang2)*R, by = evt.cy + Math.sin(ang2)*R;
+            var spikeLen = R*0.12 + Math.random()*R*0.1;
+            var ex2 = bx + Math.cos(ang2)*spikeLen, ey2 = by + Math.sin(ang2)*spikeLen;
+            ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(ex2,ey2);
+            ctx.strokeStyle = 'rgba(200,235,255,'+(alpha*0.9*Math.random())+')';
+            ctx.lineWidth = 1.2;
+            ctx.shadowBlur=8; ctx.shadowColor = 'rgba(180,225,255,'+(alpha*0.7)+')';
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+        requestAnimationFrame(tick);
+      }
+      tick();
+    }
+
+    // ── Reactive Fire — a ripple rendered in the Fire Color 1/2 palette,
+    //    plus embers using the same per-kind rendering as the regular fire
+    //    embers — but their position rides the wave's own expanding radius
+    //    (with a little wobble/bob) instead of flying off with independent
+    //    velocity, so they visibly stay pushed along the wave's outer edge
+    //    for as long as it's expanding. Rendered in two passes — every wave,
+    //    then every ember — so embers always sit in front of every wave even
+    //    when multiple presses overlap. Mirrors BodyEffectOverlay.tsx. ──
+    function spawnRideFireEmber(index,n){
+      var roll=Math.random(), r, spd, fspd;
+      if(roll<0.3){r=0.4+Math.random()*0.8;spd=0.3+Math.random()*1.2;fspd=0.6+Math.random()*1.2;}
+      else if(roll<0.6){r=1.2+Math.random()*1.8;spd=0.2+Math.random()*0.9;fspd=0.2+Math.random()*0.5;}
+      else if(roll<0.8){r=2.5+Math.random()*3;spd=0.1+Math.random()*0.4;fspd=0.05+Math.random()*0.15;}
+      else{r=0.5+Math.random()*1;spd=0.4+Math.random()*1.8;fspd=0.3+Math.random()*0.8;}
+      var kind=roll<0.3?'tiny':roll<0.6?'medium':roll<0.8?'large':'line';
+      var angle=(index/n)*Math.PI*2 + (Math.random()-0.5)*(Math.PI*2/n);
+      var useC1=Math.random()<0.6;
+      return {
+        angle:angle,
+        radialOffset: -0.03+Math.random()*0.13,
+        wobbleAmp: 0.12+Math.random()*0.3, wobbleFreq: 1+Math.random()*2, wobblePhase: Math.random()*Math.PI*2,
+        bobAmp: 0.02+Math.random()*0.04, bobFreq: 1.5+Math.random()*2.5, bobPhase: Math.random()*Math.PI*2,
+        r:r, kind:kind,
+        hue:useC1?FIRE_HUE1+(Math.random()-0.5)*20:FIRE_HUE2+(Math.random()-0.5)*20,
+        sat:90, fp:Math.random()*Math.PI*2, fs:fspd, spd:spd
+      };
+    }
+    function updateAndDrawRideFireEmbers(embers, cx, cy, R, maxSpread, age, alpha, intensity){
+      for(var i=0; i<embers.length; i++){
+        var em=embers[i];
+        var emberAngle = em.angle + Math.sin(age*em.wobbleFreq + em.wobblePhase) * em.wobbleAmp;
+        var emberR = R + em.radialOffset*maxSpread + Math.sin(age*em.bobFreq + em.bobPhase)*em.bobAmp*maxSpread;
+        if(emberR < 1) continue;
+        var px = cx + Math.cos(emberAngle)*emberR;
+        var py = cy + Math.sin(emberAngle)*emberR;
+
+        var flicker=(Math.sin(age*em.fs*4+em.fp)+1)/2;
+        var a = alpha*intensity;
+        if(a <= 0.01) continue;
+        ctx.shadowBlur=0;
+
+        if(em.kind==='tiny'){
+          var ta=a*(0.3+0.7*flicker);
+          ctx.beginPath();ctx.arc(px,py,em.r*(0.6+0.4*flicker),0,Math.PI*2);
+          ctx.fillStyle='hsla('+em.hue+','+em.sat+'%,'+(85+10*flicker)+'%,'+ta+')';
+          ctx.shadowBlur=4+8*flicker;ctx.shadowColor='hsla('+em.hue+','+em.sat+'%,80%,'+ta+')';ctx.fill();
+        } else if(em.kind==='medium'){
+          var ma=a*(0.4+0.6*flicker);
+          ctx.beginPath();ctx.arc(px,py,em.r*(0.5+0.3*flicker),0,Math.PI*2);
+          ctx.fillStyle='hsla('+em.hue+','+em.sat+'%,'+(75+20*flicker)+'%,'+ma+')';
+          ctx.shadowBlur=5+5*flicker;ctx.shadowColor='hsla('+em.hue+','+em.sat+'%,75%,'+(ma*0.8)+')';ctx.fill();
+          if(em.r>1.5){
+            var ang0=emberAngle;
+            ctx.save();ctx.translate(px-Math.cos(ang0)*em.r*2.5, py-Math.sin(ang0)*em.r*2.5);ctx.rotate(ang0);
+            ctx.beginPath();ctx.ellipse(0,0,em.r*0.1,em.r*(0.5+0.4*flicker),0,0,Math.PI*2);
+            ctx.fillStyle='hsla('+em.hue+','+em.sat+'%,65%,'+(ma*0.25)+')';ctx.fill();
+            ctx.restore();
+          }
+        } else if(em.kind==='large'){
+          var la=a*(0.25+0.4*flicker);
+          var gr2=ctx.createRadialGradient(px,py,0,px,py,em.r*(1.2+0.4*flicker));
+          gr2.addColorStop(0,'hsla('+em.hue+','+em.sat+'%,80%,'+la+')');
+          gr2.addColorStop(0.5,'hsla('+em.hue+','+em.sat+'%,60%,'+(la*0.5)+')');
+          gr2.addColorStop(1,'hsla('+em.hue+','+em.sat+'%,40%,0)');
+          ctx.beginPath();ctx.arc(px,py,em.r*(1.2+0.4*flicker),0,Math.PI*2);
+          ctx.fillStyle=gr2;ctx.fill();
+          ctx.beginPath();ctx.arc(px,py,em.r*0.35,0,Math.PI*2);
+          ctx.fillStyle='hsla('+em.hue+','+em.sat+'%,92%,'+(la*1.4)+')';ctx.fill();
+        } else {
+          var lna=a*(0.4+0.6*flicker), ang=emberAngle, len=6+em.spd*8+flicker*6;
+          ctx.save();ctx.translate(px,py);ctx.rotate(ang);
+          var sg=ctx.createLinearGradient(-len,0,em.r*2,0);
+          sg.addColorStop(0,'hsla('+em.hue+','+em.sat+'%,70%,0)');
+          sg.addColorStop(0.6,'hsla('+em.hue+','+em.sat+'%,80%,'+(lna*0.6)+')');
+          sg.addColorStop(1,'hsla('+em.hue+','+em.sat+'%,95%,'+lna+')');
+          ctx.beginPath();ctx.moveTo(-len,0);ctx.lineTo(em.r*2,0);
+          ctx.strokeStyle=sg;ctx.lineWidth=em.r*(0.6+0.6*flicker);ctx.lineCap='round';
+          ctx.shadowBlur=4+6*flicker;ctx.shadowColor='hsla('+em.hue+','+em.sat+'%,80%,'+(lna*0.8)+')';
+          ctx.stroke();ctx.restore();
+        }
+      }
+    }
+    function initReactiveFire(){
+      var events = [];
+      var prevPressed = {};
+      var ft = 0;
+      function tick(){
+        ft += 0.016;
+        var w=canvas.width, h=canvas.height;
+        ctx.clearRect(0,0,w,h);
+        var life = Math.max(SPEED, 0.5) * 0.3;
+        events = events.filter(function(e){ return ft - e.startT < e.life; });
         for(var idx in pressedButtons){
           if(pressedButtons[idx] && !prevPressed[idx]){
             var pos = btnPositions[idx];
             if(pos){
-              var hwhh = buttonHWHH(pos, w);
               var cx=(pos.x/100)*w, cy=(pos.y/100)*h;
-              events.push({cx:cx, cy:cy, startT:lt, life:life, segs: genLightning(cx,cy,w,h,hwhh[0],hwhh[1])});
+              var n = 12;
+              var embers = [];
+              for(var i=0;i<n;i++) embers.push(spawnRideFireEmber(i,n));
+              events.push({cx:cx, cy:cy, startT:ft, life:life, embers:embers});
             }
           }
         }
         prevPressed = {};
         for(var k in pressedButtons) prevPressed[k] = pressedButtons[k];
 
+        var maxSpread = Math.max(w,h) * 0.45;
+
+        // Pass 1 — every wave first
         for(var ei=0; ei<events.length; ei++){
           var evt = events[ei];
-          var age = lt - evt.startT;
-          var frac = age / evt.life;
-          var baseAlpha;
-          if(frac<0.12) baseAlpha=1.0;
-          else if(frac<0.45) baseAlpha = Math.random()>0.3 ? 0.5+Math.random()*0.5 : 0.08;
-          else baseAlpha = Math.max(0,(1-frac)*1.8);
-          baseAlpha *= INTENSITY;
+          var age = ft - evt.startT;
+          var frac = Math.min(1, age / evt.life);
+          var R = frac * maxSpread;
+          var alpha = Math.max(0, 1-frac) * INTENSITY;
+          if(alpha <= 0.02 || R < 1) continue;
+          var T = Math.max(w,h) * 0.05;
+          var grd = ctx.createRadialGradient(evt.cx, evt.cy, Math.max(0,R-T), evt.cx, evt.cy, R+T);
+          grd.addColorStop(0, 'hsla('+FIRE_HUE1+',90%,55%,0)');
+          grd.addColorStop(0.4, 'hsla('+FIRE_HUE1+',90%,55%,'+(alpha*0.8)+')');
+          grd.addColorStop(0.7, 'hsla('+FIRE_HUE2+',90%,50%,'+(alpha*0.5)+')');
+          grd.addColorStop(1, 'hsla('+FIRE_HUE2+',90%,50%,0)');
+          ctx.fillStyle = grd;
+          ctx.fillRect(0,0,w,h);
+        }
 
-          var hue = REACTIVE_RAINBOW ? (age*400)%360 : 0;
-          var colorC = REACTIVE_RAINBOW ? 'hsla('+hue+',100%,75%,' : 'rgba('+rr+','+rg+','+rb+',';
-          var whiteC = 'rgba(255,255,255,';
-
-          if(frac<0.18){
-            var fF = 1-frac/0.18;
-            var fR = Math.max(w,h)*0.055*fF;
-            var fg = ctx.createRadialGradient(evt.cx,evt.cy,0,evt.cx,evt.cy,fR);
-            fg.addColorStop(0, whiteC+(fF*baseAlpha)+')');
-            fg.addColorStop(0.3, colorC+(fF*baseAlpha*0.8)+')');
-            fg.addColorStop(1, colorC+'0)');
-            ctx.fillStyle=fg; ctx.fillRect(0,0,w,h);
-          }
-
-          ctx.lineCap='round';
-          for(var si=0; si<evt.segs.length; si++){
-            var seg = evt.segs[si];
-            var df = Math.pow(0.6, seg.depth);
-            var a = baseAlpha*df;
-            if(a<0.01) continue;
-
-            ctx.beginPath(); ctx.moveTo(seg.x1,seg.y1); ctx.lineTo(seg.x2,seg.y2);
-            ctx.strokeStyle = colorC+(a*0.55)+')';
-            ctx.lineWidth = (5-seg.depth*1.2)*df;
-            ctx.shadowBlur=18; ctx.shadowColor = colorC+(a*0.7)+')';
-            ctx.stroke();
-
-            ctx.beginPath(); ctx.moveTo(seg.x1,seg.y1); ctx.lineTo(seg.x2,seg.y2);
-            ctx.strokeStyle = whiteC+a+')';
-            ctx.lineWidth = (1.8-seg.depth*0.45)*df;
-            ctx.shadowBlur=5; ctx.shadowColor='rgba(255,255,255,'+(a*0.9)+')';
-            ctx.stroke();
-          }
-          ctx.shadowBlur=0;
+        // Pass 2 — every ember on top, riding its wave's current radius
+        for(var ej=0; ej<events.length; ej++){
+          var evt2 = events[ej];
+          var age2 = ft - evt2.startT;
+          var frac2 = Math.min(1, age2 / evt2.life);
+          var R2 = frac2 * maxSpread;
+          var alpha2 = Math.max(0, 1-frac2);
+          updateAndDrawRideFireEmbers(evt2.embers, evt2.cx, evt2.cy, R2, maxSpread, age2, alpha2, INTENSITY);
         }
         requestAnimationFrame(tick);
       }
@@ -1176,8 +1332,21 @@ ${config.showWatermark ? `` : ""}
     var vid = document.createElement('video');
     vid.src = '${WATERMARK_DATA_URL}';
     vid.muted = true; vid.playsInline = true;
-    vid.style.cssText = 'position:absolute;top:3%;left:50%;transform:translateX(-50%);width:95%;pointer-events:none;';
-    document.getElementById('controller').appendChild(vid);
+    // Each controller body sits a little differently in frame, so the
+    // watermark's vertical position is tuned per controller type rather than
+    // using one fixed value for all of them.
+    vid.style.cssText = 'position:absolute;top:${
+      config.controllerType === "xbox-one" || config.controllerType === "c4d1-edge" ? "12%"
+      : config.controllerType === "ps4" ? "7%"
+      : "3%"
+    };left:50%;transform:translateX(-50%);width:102%;pointer-events:none;';
+    // Inserted before #disconnected-msg (rather than appended last) so the
+    // status box always stacks in front of it — and since it's still a
+    // child of #controller, it still inherits that element's blur filter
+    // when disconnected, same as everything else inside it.
+    var ctrlEl = document.getElementById('controller');
+    var msgElForWatermark = document.getElementById('disconnected-msg');
+    ctrlEl.insertBefore(vid, msgElForWatermark);
     function playOnce(){ vid.currentTime=0; vid.play(); }
     vid.onended = function(){ setTimeout(playOnce, 15000); };
     playOnce();

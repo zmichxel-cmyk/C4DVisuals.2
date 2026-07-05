@@ -3,26 +3,69 @@ const path = require('path');
 const fs = require('fs/promises');
 const isDev = !app.isPackaged;
 
+// Sets the app's name as reported to the OS (macOS dock/menu bar, Windows
+// taskbar grouping) and — importantly — the default folder name Electron
+// uses for app.getPath('userData'), where the custom library files live.
+// Must be called before app.whenReady().
+app.setName('C4D Visuals');
+
+function createSplash() {
+  const splash = new BrowserWindow({
+    width: 420,
+    height: 420,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    alwaysOnTop: true,
+    center: true,
+    skipTaskbar: true,
+    webPreferences: { contextIsolation: true },
+  });
+  splash.loadFile(path.join(__dirname, 'splash.html'));
+  return splash;
+}
+
 function createWindow() {
+  const splash = createSplash();
+  const splashShownAt = Date.now();
+  const MIN_SPLASH_MS = 900; // keep it visible a beat even on a fast load, so it doesn't just flash
+
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1200,
     minHeight: 800,
+    show: false, // stay hidden until the first real frame is ready, so the splash is what's seen first
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
     },
-    title: 'Controller Skin Studio',
-    icon: path.join(__dirname, 'public', 'favicon.svg'),
+    title: 'C4D Visuals',
+    icon: path.join(__dirname, 'build', 'icon.png'),
+  });
+
+  win.once('ready-to-show', () => {
+    const elapsed = Date.now() - splashShownAt;
+    const remaining = Math.max(0, MIN_SPLASH_MS - elapsed);
+    setTimeout(() => {
+      if (!splash.isDestroyed()) splash.close();
+      win.show();
+    }, remaining);
   });
 
   if (isDev) {
     win.loadURL('http://localhost:5173');
     win.webContents.openDevTools();
+    // If Electron was started before the Vite dev server finished starting up,
+    // retry instead of leaving the splash stuck on a failed load.
+    win.webContents.on('did-fail-load', () => {
+      setTimeout(() => win.loadURL('http://localhost:5173'), 500);
+    });
   } else {
     win.loadFile(path.join(__dirname, 'dist', 'public', 'index.html'));
+    win.webContents.openDevTools(); // TEMPORARY — for diagnosing the blank-window issue, remove once resolved
   }
 }
 

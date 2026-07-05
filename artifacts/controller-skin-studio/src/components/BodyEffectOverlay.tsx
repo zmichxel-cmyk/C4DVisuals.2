@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 
-export type BodyEffectType = "none" | "pulseGlow" | "particles" | "fire" | "reactive" | "orbitTrail" | "lightningStrike";
+export type BodyEffectType = "none" | "pulseGlow" | "particles" | "fire" | "reactive" | "reactiveReverse" | "particleBurst" | "reactiveElectric" | "reactiveFire";
 
 interface Props {
   effect: BodyEffectType;
@@ -46,76 +46,6 @@ function hexToHsl(hex: string): [number, number, number] {
   return [h*60, s*100, l*100];
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Orbit Trail — types and generator
-// Particles spiral outward with conservation of angular momentum (ω ∝ 1/r²),
-// giving a natural deceleration as each arm expands outward.
-// ─────────────────────────────────────────────────────────────────────────────
-type OrbitParticle = {
-  angle0: number;
-  omega0: number;
-  vr:     number;
-  r0:     number;
-  hueOff: number;
-  width:  number;
-};
-type OrbitEvent = { cx:number; cy:number; startT:number; life:number; particles:OrbitParticle[] };
-
-function genOrbitParticles(n: number, maxR: number, life: number, hw: number, hh: number): OrbitParticle[] {
-  return Array.from({ length: n }, (_, i) => {
-    const angle0 = (i / n) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
-    const ca = Math.abs(Math.cos(angle0)), sa = Math.abs(Math.sin(angle0));
-    const r0 = (ca < 1e-9 ? hh : sa < 1e-9 ? hw : Math.min(hw/ca, hh/sa)) + Math.random() * 3;
-    return { angle0, omega0: 4.5 + Math.random() * 3.5, vr: maxR * (0.6 + Math.random() * 0.3) / life, r0, hueOff: (i / n) * 360, width: 1.2 + Math.random() * 1.8 };
-  });
-}
-function orbitXY(p: OrbitParticle, age: number, cx: number, cy: number): [number, number] {
-  const r = p.r0 + p.vr * Math.max(age, 0);
-  const theta = p.angle0 + (p.omega0 * p.r0 / p.vr) * (1 - p.r0 / r);
-  return [cx + r * Math.cos(theta), cy + r * Math.sin(theta)];
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Lightning Strike — types and generator
-// Recursive midpoint displacement. Higher roughness (0.65) + more branch
-// probability gives the jagged, fractal look of real lightning.
-// ─────────────────────────────────────────────────────────────────────────────
-type BoltSeg = { x1:number; y1:number; x2:number; y2:number; depth:number };
-type LightEvent = { cx:number; cy:number; startT:number; life:number; segs:BoltSeg[] };
-
-function subdivide(
-  x1:number, y1:number, x2:number, y2:number,
-  rough:number, depth:number, maxD:number, segs:BoltSeg[]
-) {
-  const dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy);
-  if (depth >= maxD || len < 2) { segs.push({x1,y1,x2,y2,depth:Math.min(depth,2)}); return; }
-  const px=-dy/len, py=dx/len, off=(Math.random()-0.5)*rough*len;
-  const mx=(x1+x2)/2+px*off, my=(y1+y2)/2+py*off;
-  subdivide(x1,y1,mx,my,rough*0.65,depth+1,maxD,segs);
-  subdivide(mx,my,x2,y2,rough*0.65,depth+1,maxD,segs);
-  if (depth < 2 && Math.random() < 0.55-depth*0.1) {
-    const bAng=Math.atan2(dy,dx)+(Math.random()<0.5?1:-1)*(0.3+Math.random()*0.6);
-    const bLen=len*(0.3+Math.random()*0.5);
-    subdivide(mx,my, mx+Math.cos(bAng)*bLen, my+Math.sin(bAng)*bLen, rough*0.6, depth+2, maxD-1, segs);
-  }
-}
-function genLightning(cx:number, cy:number, w:number, h:number, hw:number, hh:number): BoltSeg[] {
-  const segs:BoltSeg[] = [];
-  const maxR = Math.max(w,h);
-  const arms = 2 + Math.floor(Math.random()*2);
-  const base = Math.random()*Math.PI*2;
-  for (let a=0; a<arms; a++) {
-    const ang = base+(a/arms)*Math.PI*2+(Math.random()-0.5)*0.6;
-    const ca=Math.abs(Math.cos(ang)), sa=Math.abs(Math.sin(ang));
-    const edgeR = ca < 1e-9 ? hh : sa < 1e-9 ? hw : Math.min(hw/ca, hh/sa);
-    const sx = cx + Math.cos(ang)*edgeR;
-    const sy = cy + Math.sin(ang)*edgeR;
-    const len = maxR*(0.5+Math.random()*0.45) - edgeR;
-    subdivide(sx, sy, sx+Math.cos(ang)*len, sy+Math.sin(ang)*len, 0.45, 0, 6, segs);
-  }
-  return segs;
-}
-
 // Returns [halfWidth, halfHeight] of the button's visual press area in canvas pixels.
 // For circle/pill/cross buttons hw=hh=(size/200)*w (uniform radius in all directions).
 // For rect (touchpad), uses the buttonMask sw/sh percentages which define the actual
@@ -132,6 +62,73 @@ function buttonHWHH(
   }
   const r = (pos.size / 200) * w;
   return [r, r];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Particle Burst — types and generator
+// A one-shot explosion spawned along the pressed button's edge. Position is a
+// closed-form function of age (exponentially-decaying velocity, no per-frame
+// mutable state) with an added perpendicular jitter term for organic wander.
+// Sizes/drag are drawn from weighted tiers — spark/ember/chunk — the same
+// trick the fire embers use to avoid every particle looking identical.
+// Velocity is derived from a target travel distance (maxDist = v0/drag)
+// scaled to canvas size, rather than picked independently of drag — otherwise
+// faster tiers just brake harder and every tier caps out at nearly the same
+// tiny radius regardless of controller size, which is why the burst was
+// hanging around the button instead of shooting outward.
+// ─────────────────────────────────────────────────────────────────────────────
+type BurstParticle = {
+  x0:number; y0:number; angle:number; vx:number; vy:number;
+  size:number; drag:number; hueOff:number;
+  jitterAmp:number; jitterFreq:number; jitterPhase:number;
+  flickerSpeed:number; flickerPhase:number;
+};
+type BurstEvent = { startT:number; life:number; particles:BurstParticle[] };
+
+function genBurstParticles(cx:number, cy:number, hw:number, hh:number, canvasMax:number, n:number): BurstParticle[] {
+  const arr: BurstParticle[] = [];
+  for (let i=0; i<n; i++) {
+    // Most particles fan out evenly and stay close to the button. A minority
+    // ("wild" ones) get both a wider random angle and extra travel distance,
+    // so only some visibly rocket off further/more randomly — not all of them.
+    const isWild = Math.random() < 0.22;
+    let angle = (i/n)*Math.PI*2 + (Math.random()-0.5)*(Math.PI*2/n);
+    if (isWild) angle += (Math.random()-0.5) * 1.6;
+
+    const ca=Math.abs(Math.cos(angle)), sa=Math.abs(Math.sin(angle));
+    const edgeR = ca < 1e-9 ? hh : sa < 1e-9 ? hw : Math.min(hw/ca, hh/sa);
+    const x0 = cx + Math.cos(angle)*edgeR, y0 = cy + Math.sin(angle)*edgeR;
+
+    // Weighted kind — small/fast, medium, or big/slow — for organic size variety
+    const roll = Math.random();
+    let size:number, maxDist:number, drag:number;
+    if (roll < 0.35) {
+      size = 0.8 + Math.random()*1.0;                      // spark — tiny, fast, snaps to a stop
+      maxDist = canvasMax * (0.04 + Math.random()*0.05);
+      drag = 3.0 + Math.random()*2.0;
+    } else if (roll < 0.75) {
+      size = 1.8 + Math.random()*2.2;                      // ember — standard
+      maxDist = canvasMax * (0.06 + Math.random()*0.06);
+      drag = 1.8 + Math.random()*1.4;
+    } else {
+      size = 3.2 + Math.random()*3.2;                      // chunk — big, slow, lingers
+      maxDist = canvasMax * (0.09 + Math.random()*0.08);
+      drag = 1.0 + Math.random()*0.8;
+    }
+    if (isWild) maxDist *= 1.8 + Math.random()*1.4;
+    const speed = maxDist * drag;
+
+    arr.push({
+      x0, y0, angle, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
+      size, drag, hueOff: (i/n)*360 + Math.random()*30,
+      jitterAmp: 4 + Math.random()*14,
+      jitterFreq: 3 + Math.random()*6,
+      jitterPhase: Math.random()*Math.PI*2,
+      flickerSpeed: 2 + Math.random()*6,
+      flickerPhase: Math.random()*Math.PI*2,
+    });
+  }
+  return arr;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,11 +199,21 @@ export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor
   useEffect(() => { reactColorRef.current  = reactiveColor;                 }, [reactiveColor]);
   useEffect(() => { reactRainbowRef.current = reactiveRainbow;              }, [reactiveRainbow]);
 
-  // ── Orbit / Lightning / Crystal event stores (each effect owns its own) ───
-  const orbitEventsRef   = useRef<OrbitEvent[]>([]);
-  const orbitTRef        = useRef(0);
-  const lightEventsRef   = useRef<LightEvent[]>([]);
-  const lightTRef        = useRef(0);
+  // ── Particle Burst event store ─────────────────────────────────────────────
+  const burstEventsRef = useRef<BurstEvent[]>([]);
+  const burstTRef      = useRef(0);
+
+  // ── Reactive Reverse event store ───────────────────────────────────────────
+  const reverseRipplesRef  = useRef<{ cx:number; cy:number; startT:number; edgeR:number }[]>([]);
+  const reverseRealTRef    = useRef(0);
+
+  // ── Reactive Electric event store ──────────────────────────────────────────
+  const electricEventsRef = useRef<{ cx:number; cy:number; startT:number; life:number; seed:number }[]>([]);
+  const electricTRef      = useRef(0);
+
+  // ── Reactive Fire event store ──────────────────────────────────────────────
+  const fireBurstEventsRef = useRef<{ cx:number; cy:number; startT:number; life:number; embers:RideEmber[] }[]>([]);
+  const fireBurstTRef      = useRef(0);
 
   // Helper: hex color + alpha → rgba string
   function hexAlpha(hex: string, a: number): string {
@@ -324,6 +331,147 @@ export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor
       flickerSpeed, flickerPhase: Math.random()*Math.PI*2,
       speed: spd,
     };
+  }
+
+  // Ride embers stay locked to the wave's own expanding radius the whole
+  // time — instead of independent velocity/buoyancy, each one just has a
+  // fixed angle plus a small radial offset and a gentle wobble/bob, so it
+  // visibly rides the outer edge of the fire wave as it's pushed outward
+  // rather than flying off on its own separate trajectory.
+  type RideEmber = {
+    angle:number; radialOffset:number;
+    wobbleAmp:number; wobbleFreq:number; wobblePhase:number;
+    bobAmp:number; bobFreq:number; bobPhase:number;
+    r:number; hue:number; sat:number; kind:EmberKind;
+    flickerSpeed:number; flickerPhase:number; spd:number;
+  };
+
+  // Same kind weights/ranges as spawnEmber above (size/speed-character/flicker
+  // per tiny/medium/large/line), but positioned relative to the wave's radius
+  // instead of given independent velocity.
+  function spawnRideEmber(index: number, n: number): RideEmber {
+    const [hf1,sf1] = hue1Ref.current, [hf2,sf2] = hue2Ref.current;
+    const useC1 = Math.random() < 0.6;
+    const hue = useC1 ? hf1+(Math.random()-0.5)*20 : hf2+(Math.random()-0.5)*20;
+    const sat = useC1 ? sf1 : sf2;
+
+    const roll = Math.random();
+    let kind: EmberKind, r: number, spd: number, flickerSpeed: number;
+    if (roll < 0.30) {
+      kind = "tiny"; r = 0.4 + Math.random() * 0.8;
+      spd = 0.3 + Math.random() * 1.2;
+      flickerSpeed = 0.6 + Math.random() * 1.2;
+    } else if (roll < 0.60) {
+      kind = "medium"; r = 1.2 + Math.random() * 1.8;
+      spd = 0.2 + Math.random() * 0.9;
+      flickerSpeed = 0.2 + Math.random() * 0.5;
+    } else if (roll < 0.80) {
+      kind = "large"; r = 2.5 + Math.random() * 3.0;
+      spd = 0.1 + Math.random() * 0.4;
+      flickerSpeed = 0.05 + Math.random() * 0.15;
+    } else {
+      kind = "line"; r = 0.5 + Math.random() * 1.0;
+      spd = 0.4 + Math.random() * 1.8;
+      flickerSpeed = 0.3 + Math.random() * 0.8;
+    }
+
+    const angle = (index/n)*Math.PI*2 + (Math.random()-0.5)*(Math.PI*2/n);
+    return {
+      angle,
+      radialOffset: -0.03 + Math.random()*0.13,   // sits right around the wave's edge — a few slightly inside, most slightly outside
+      wobbleAmp: 0.12 + Math.random()*0.3, wobbleFreq: 1+Math.random()*2, wobblePhase: Math.random()*Math.PI*2,
+      bobAmp: 0.02 + Math.random()*0.04, bobFreq: 1.5+Math.random()*2.5, bobPhase: Math.random()*Math.PI*2,
+      r, hue, sat, kind,
+      flickerSpeed, flickerPhase: Math.random()*Math.PI*2, spd,
+    };
+  }
+
+  // Same per-kind rendering as the ambient fire's embers, but position is
+  // derived from the wave's current radius (R) each frame rather than
+  // integrated from stored velocity — so the ember rides the wave's edge for
+  // its entire visible lifetime instead of drifting independently.
+  function updateAndDrawRideEmbers(ctx: CanvasRenderingContext2D, embers: RideEmber[], cx:number, cy:number, R:number, maxSpread:number, age:number, alpha:number, intensity:number) {
+    for (let i = 0; i < embers.length; i++) {
+      const em = embers[i];
+      const emberAngle = em.angle + Math.sin(age*em.wobbleFreq + em.wobblePhase) * em.wobbleAmp;
+      const emberR = R + em.radialOffset*maxSpread + Math.sin(age*em.bobFreq + em.bobPhase)*em.bobAmp*maxSpread;
+      if (emberR < 1) continue;
+      const px = cx + Math.cos(emberAngle)*emberR;
+      const py = cy + Math.sin(emberAngle)*emberR;
+
+      const flicker = (Math.sin(age * em.flickerSpeed*4 + em.flickerPhase) + 1) / 2;
+      const a = alpha * intensity;
+      if (a <= 0.01) continue;
+
+      ctx.shadowBlur = 0;
+
+      if (em.kind === "tiny") {
+        const ta = a * (0.3 + 0.7 * flicker);
+        ctx.beginPath();
+        ctx.arc(px, py, em.r * (0.6 + 0.4*flicker), 0, Math.PI*2);
+        ctx.fillStyle = `hsla(${em.hue},${em.sat}%,${85+10*flicker}%,${ta})`;
+        ctx.shadowBlur = 4 + 8*flicker;
+        ctx.shadowColor = `hsla(${em.hue},${em.sat}%,80%,${ta})`;
+        ctx.fill();
+
+      } else if (em.kind === "medium") {
+        const ma = a * (0.4 + 0.6*flicker);
+        ctx.beginPath();
+        ctx.arc(px, py, em.r*(0.5+0.3*flicker), 0, Math.PI*2);
+        ctx.fillStyle = `hsla(${em.hue},${em.sat}%,${75+20*flicker}%,${ma})`;
+        ctx.shadowBlur = 5 + 5*flicker;
+        ctx.shadowColor = `hsla(${em.hue},${em.sat}%,75%,${ma*0.8})`;
+        ctx.fill();
+        if (em.r > 1.5) {
+          const ang = emberAngle; // radially outward — the ember's actual direction of travel
+          ctx.save();
+          ctx.translate(px - Math.cos(ang)*em.r*2.5, py - Math.sin(ang)*em.r*2.5);
+          ctx.rotate(ang);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, em.r*0.1, em.r*(0.5+0.4*flicker), 0, 0, Math.PI*2);
+          ctx.fillStyle = `hsla(${em.hue},${em.sat}%,65%,${ma*0.25})`;
+          ctx.fill();
+          ctx.restore();
+        }
+
+      } else if (em.kind === "large") {
+        const la = a * (0.25 + 0.4*flicker);
+        const grd = ctx.createRadialGradient(px, py, 0, px, py, em.r*(1.2+0.4*flicker));
+        grd.addColorStop(0,   `hsla(${em.hue},${em.sat}%,80%,${la})`);
+        grd.addColorStop(0.5, `hsla(${em.hue},${em.sat}%,60%,${la*0.5})`);
+        grd.addColorStop(1,   `hsla(${em.hue},${em.sat}%,40%,0)`);
+        ctx.beginPath();
+        ctx.arc(px, py, em.r*(1.2+0.4*flicker), 0, Math.PI*2);
+        ctx.fillStyle = grd;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(px, py, em.r*0.35, 0, Math.PI*2);
+        ctx.fillStyle = `hsla(${em.hue},${em.sat}%,92%,${la*1.4})`;
+        ctx.fill();
+
+      } else {
+        const la = a * (0.4 + 0.6*flicker);
+        const ang = emberAngle; // radially outward — the ember's actual direction of travel
+        const len = 6 + em.spd * 8 + flicker * 6;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(ang);
+        const sg = ctx.createLinearGradient(-len, 0, em.r*2, 0);
+        sg.addColorStop(0,   `hsla(${em.hue},${em.sat}%,70%,0)`);
+        sg.addColorStop(0.6, `hsla(${em.hue},${em.sat}%,80%,${la*0.6})`);
+        sg.addColorStop(1,   `hsla(${em.hue},${em.sat}%,95%,${la})`);
+        ctx.beginPath();
+        ctx.moveTo(-len, 0);
+        ctx.lineTo(em.r*2, 0);
+        ctx.strokeStyle = sg;
+        ctx.lineWidth = em.r * (0.6 + 0.6*flicker);
+        ctx.lineCap = "round";
+        ctx.shadowBlur = 4 + 6*flicker;
+        ctx.shadowColor = `hsla(${em.hue},${em.sat}%,80%,${la*0.8})`;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
   }
 
   // Fire glow — uses fireGlowSpeed
@@ -534,151 +682,242 @@ export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor
     }
   });
 
+  // ── Reactive Reverse — mirror of the reactive ripple: instead of a ring
+  //    expanding outward from the button, it starts big and far away and
+  //    converges inward, brightening as it closes in on the press point. ──
+  const reactiveReverseRef = useCanvas(effect === "reactiveReverse", [speed, intensity], (ctx, w, h) => {
+    reverseRealTRef.current += 0.016;
+    const rt = reverseRealTRef.current;
+    const rippleLife = Math.max(speed, 0.5) * 0.22;
 
-  // ── Orbit Trail ──────────────────────────────────────────────────────────
-  const orbitRef = useCanvas(effect === "orbitTrail", [speed, intensity], (ctx, w, h) => {
-    orbitTRef.current += 0.016;
-    const rt = orbitTRef.current;
-    const life = Math.max(speed, 0.5) * 0.28;
-
-    orbitEventsRef.current = orbitEventsRef.current.filter(e => rt - e.startT < e.life);
+    reverseRipplesRef.current = reverseRipplesRef.current.filter(r => rt - r.startT < rippleLife);
     const cur = pressedRef.current, prev = prevPressedRef.current;
     for (const idx of cur) {
       if (!prev.has(idx)) {
         const pos = btnPosRef.current[idx];
-        if (pos) orbitEventsRef.current.push({
-          cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:rt, life,
-          particles: genOrbitParticles(12, Math.max(w,h), life, ...buttonHWHH(pos, w)),
-        });
+        if (pos) {
+          const [hw, hh] = buttonHWHH(pos, w);
+          reverseRipplesRef.current.push({ cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:rt, edgeR:Math.min(hw,hh) });
+        }
       }
     }
     prevPressedRef.current = new Set(cur);
 
-    const col=reactColorRef.current;
+    const col = reactColorRef.current;
     const rr=parseInt(col.slice(1,3),16), rg=parseInt(col.slice(3,5),16), rb=parseInt(col.slice(5,7),16);
-    const TRAIL = 0.22;
+    const maxSpread = Math.max(w,h) * 0.7;
 
-    for (const evt of orbitEventsRef.current) {
-      const age = rt - evt.startT;
-      const evtFrac = age / evt.life;
-      const fade = Math.max(0, (1 - evtFrac) * intensity);
+    for (const rip of reverseRipplesRef.current) {
+      const age  = rt - rip.startT;
+      const frac = Math.min(1, age / rippleLife);
+      const R     = rip.edgeR + (1-frac) * maxSpread;  // starts big, converges to the button
+      const T     = Math.max(w,h) * 0.06;
+      const alpha = frac * intensity;                   // builds as it closes in
+      const hue   = (((age/rippleLife)*300 + (rip.cx/w)*120)%360+360)%360;
 
-      for (const p of evt.particles) {
-        const trailAge = Math.max(0, age - TRAIL);
-        const STEPS = 48;
-        const hue = (p.hueOff + age * 140) % 360;
-        const getC = (a:number) => reactRainbowRef.current
-          ? `hsla(${hue},100%,65%,${a})` : `rgba(${rr},${rg},${rb},${a})`;
+      const getC = (a:number) => reactRainbowRef.current
+        ? `hsla(${hue},100%,65%,${a})` : `rgba(${rr},${rg},${rb},${a})`;
 
-        ctx.beginPath();
-        let first = true;
-        for (let i=0; i<=STEPS; i++) {
-          const t = trailAge + (age - trailAge) * (i / STEPS);
-          const [px, py] = orbitXY(p, t, evt.cx, evt.cy);
-          first ? (ctx.moveTo(px,py), first=false) : ctx.lineTo(px,py);
-        }
-        const [tx,ty] = orbitXY(p, trailAge, evt.cx, evt.cy);
-        const [hx,hy] = orbitXY(p, age,      evt.cx, evt.cy);
-        const grd = ctx.createLinearGradient(tx,ty,hx,hy);
-        grd.addColorStop(0, getC(0));
-        grd.addColorStop(0.5, getC(fade * 0.25));
-        grd.addColorStop(1,   getC(fade * 0.7));
-        ctx.strokeStyle = grd;
-        ctx.lineWidth = p.width * 3.5;
-        ctx.lineCap = "round"; ctx.lineJoin = "round";
-        ctx.shadowBlur = 10; ctx.shadowColor = getC(fade * 0.6);
-        ctx.stroke();
-
-        ctx.beginPath(); first = true;
-        for (let i=0; i<=STEPS; i++) {
-          const t = trailAge + (age - trailAge) * (i / STEPS);
-          const [px,py] = orbitXY(p, t, evt.cx, evt.cy);
-          first ? (ctx.moveTo(px,py), first=false) : ctx.lineTo(px,py);
-        }
-        const grd2 = ctx.createLinearGradient(tx,ty,hx,hy);
-        grd2.addColorStop(0, getC(0));
-        grd2.addColorStop(0.6, getC(fade * 0.5));
-        grd2.addColorStop(1,   getC(fade));
-        ctx.strokeStyle = grd2;
-        ctx.lineWidth = p.width * 0.9;
-        ctx.shadowBlur = 4; ctx.shadowColor = getC(fade);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-      }
+      const grd = ctx.createRadialGradient(rip.cx, rip.cy, Math.max(0,R-T), rip.cx, rip.cy, R+T);
+      grd.addColorStop(0,   getC(0));
+      grd.addColorStop(0.3, getC(alpha*0.5));
+      grd.addColorStop(0.5, getC(alpha));
+      grd.addColorStop(0.7, getC(alpha*0.5));
+      grd.addColorStop(1,   getC(0));
+      ctx.fillStyle = grd;
+      ctx.fillRect(0,0,w,h);
     }
-
   });
 
-  // ── Lightning Strike ──────────────────────────────────────────────────────
-  const lightningRef = useCanvas(effect === "lightningStrike", [speed, intensity], (ctx, w, h) => {
-    lightTRef.current += 0.016;
-    const rt = lightTRef.current;
-    const life = Math.max(speed, 0.5) * 0.1;  // short sharp burst
+  // ── Reactive Electric — a crackling, jagged ring (re-jittered every frame
+  //    for a "static" flicker) with a few short tangent sparks, instead of a
+  //    smooth expanding wave. ──
+  const reactiveElectricRef = useCanvas(effect === "reactiveElectric", [speed, intensity], (ctx, w, h) => {
+    electricTRef.current += 0.016;
+    const rt = electricTRef.current;
+    const life = Math.max(speed, 0.5) * 0.22;
 
-    lightEventsRef.current = lightEventsRef.current.filter(e => rt - e.startT < e.life);
+    electricEventsRef.current = electricEventsRef.current.filter(e => rt - e.startT < life);
     const cur = pressedRef.current, prev = prevPressedRef.current;
     for (const idx of cur) {
       if (!prev.has(idx)) {
         const pos = btnPosRef.current[idx];
-        if (pos) lightEventsRef.current.push({
-          cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT:rt, life,
-          segs: genLightning((pos.x/100)*w, (pos.y/100)*h, w, h, ...buttonHWHH(pos, w)),
-        });
+        if (pos) electricEventsRef.current.push({ cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT: rt, life, seed: Math.random()*1000 });
       }
     }
     prevPressedRef.current = new Set(cur);
 
-    const col=reactColorRef.current;
-    const rr=parseInt(col.slice(1,3),16), rg=parseInt(col.slice(3,5),16), rb=parseInt(col.slice(5,7),16);
+    ctx.clearRect(0,0,w,h);
+    const maxSpread = Math.max(w,h) * 0.85;
+    const SEGMENTS = 28;
 
-    for (const evt of lightEventsRef.current) {
+    for (const evt of electricEventsRef.current) {
       const age = rt - evt.startT;
-      const frac = age / evt.life;
+      const frac = Math.min(1, age / evt.life);
+      const R = frac * maxSpread;
+      const alpha = Math.max(0, 1 - frac) * intensity;
+      if (alpha <= 0.02 || R < 1) continue;
 
-      let baseAlpha: number;
-      if (frac < 0.12)      baseAlpha = 1.0;
-      else if (frac < 0.45) baseAlpha = Math.random() > 0.3 ? 0.5 + Math.random()*0.5 : 0.08;
-      else                  baseAlpha = Math.max(0, (1 - frac) * 1.8);
-      baseAlpha *= intensity;
-
-      const hue = reactRainbowRef.current ? (age * 400) % 360 : 0;
-      const colorC = reactRainbowRef.current ? `hsla(${hue},100%,75%,` : `rgba(${rr},${rg},${rb},`;
-      const whiteC = `rgba(255,255,255,`;
-
-      // Impact flash at origin
-      if (frac < 0.18) {
-        const fF = 1 - frac/0.18;
-        const fR = Math.max(w,h)*0.055*fF;
-        const fg = ctx.createRadialGradient(evt.cx,evt.cy,0,evt.cx,evt.cy,fR);
-        fg.addColorStop(0,   `${whiteC}${fF*baseAlpha})`);
-        fg.addColorStop(0.3, `${colorC}${fF*baseAlpha*0.8})`);
-        fg.addColorStop(1,   `${colorC}0)`);
-        ctx.fillStyle=fg; ctx.fillRect(0,0,w,h);
+      ctx.save();
+      ctx.beginPath();
+      for (let s=0; s<=SEGMENTS; s++) {
+        const ang = (s/SEGMENTS)*Math.PI*2;
+        const jitter = (Math.sin(ang*7 + evt.seed + rt*40) * 0.5 + (Math.random()-0.5)) * R * 0.18;
+        const rr = Math.max(2, R + jitter);
+        const x = evt.cx + Math.cos(ang)*rr, y = evt.cy + Math.sin(ang)*rr;
+        if (s===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
       }
+      ctx.closePath();
+      ctx.strokeStyle = `rgba(140,210,255,${alpha})`;
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 16; ctx.shadowColor = `rgba(160,220,255,${alpha*0.9})`;
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${alpha*0.8})`;
+      ctx.lineWidth = 0.8;
+      ctx.shadowBlur = 4;
+      ctx.stroke();
 
-      ctx.lineCap="round";
-      for (const seg of evt.segs) {
-        const df = Math.pow(0.6, seg.depth);
-        const a = baseAlpha * df;
-        if (a < 0.01) continue;
-
-        // Glow halo
-        ctx.beginPath(); ctx.moveTo(seg.x1,seg.y1); ctx.lineTo(seg.x2,seg.y2);
-        ctx.strokeStyle = `${colorC}${a*0.55})`;
-        ctx.lineWidth = (5 - seg.depth*1.2)*df;
-        ctx.shadowBlur = 18; ctx.shadowColor = `${colorC}${a*0.7})`;
-        ctx.stroke();
-
-        // Bright white core
-        ctx.beginPath(); ctx.moveTo(seg.x1,seg.y1); ctx.lineTo(seg.x2,seg.y2);
-        ctx.strokeStyle = `${whiteC}${a})`;
-        ctx.lineWidth = (1.8 - seg.depth*0.45)*df;
-        ctx.shadowBlur = 5; ctx.shadowColor = `rgba(255,255,255,${a*0.9})`;
+      // A few tangent spark spikes shooting off the ring at random points
+      for (let k=0; k<5; k++) {
+        const ang = (((evt.seed*13 + k*71) % 360) * Math.PI/180) + rt*3;
+        const bx = evt.cx + Math.cos(ang)*R, by = evt.cy + Math.sin(ang)*R;
+        const spikeLen = R*0.12 + Math.random()*R*0.1;
+        const ex = bx + Math.cos(ang)*spikeLen, ey = by + Math.sin(ang)*spikeLen;
+        ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(ex,ey);
+        ctx.strokeStyle = `rgba(200,235,255,${alpha*0.9*Math.random()})`;
+        ctx.lineWidth = 1.2;
+        ctx.shadowBlur = 8; ctx.shadowColor = `rgba(180,225,255,${alpha*0.7})`;
         ctx.stroke();
       }
-      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  });
+
+  // ── Reactive Fire — a ripple rendered in the same Fire Color 1/2 palette as
+  //    the ambient fire effect, plus embers using the same per-kind rendering
+  //    as the regular fire embers — but their position rides the wave's own
+  //    expanding radius (with a little wobble/bob) instead of flying off with
+  //    independent velocity, so they visibly stay pushed along the wave's
+  //    outer edge for as long as it's expanding. Rendered in two passes — all
+  //    wave gradients, then all embers — so embers always sit in front of
+  //    every wave even when multiple presses overlap. ──
+  const reactiveFireRef = useCanvas(effect === "reactiveFire", [speed, intensity], (ctx, w, h) => {
+    fireBurstTRef.current += 0.016;
+    const rt = fireBurstTRef.current;
+    const life = Math.max(speed, 0.5) * 0.3;
+
+    fireBurstEventsRef.current = fireBurstEventsRef.current.filter(e => rt - e.startT < e.life);
+    const cur = pressedRef.current, prev = prevPressedRef.current;
+    for (const idx of cur) {
+      if (!prev.has(idx)) {
+        const pos = btnPosRef.current[idx];
+        if (pos) {
+          const cx = (pos.x/100)*w, cy = (pos.y/100)*h;
+          const n = 12;
+          const embers: RideEmber[] = [];
+          for (let i=0; i<n; i++) embers.push(spawnRideEmber(i, n));
+          fireBurstEventsRef.current.push({ cx, cy, startT: rt, life, embers });
+        }
+      }
+    }
+    prevPressedRef.current = new Set(cur);
+
+    ctx.clearRect(0,0,w,h);
+    const [hf1,sf1] = hue1Ref.current, [hf2,sf2] = hue2Ref.current;
+    const maxSpread = Math.max(w,h) * 0.45;
+
+    // Pass 1 — every wave first
+    for (const evt of fireBurstEventsRef.current) {
+      const age = rt - evt.startT;
+      const frac = Math.min(1, age / evt.life);
+      const R = frac * maxSpread;
+      const alpha = Math.max(0, 1 - frac) * intensity;
+      if (alpha <= 0.02 || R < 1) continue;
+      const T = Math.max(w,h) * 0.05;
+      const grd = ctx.createRadialGradient(evt.cx, evt.cy, Math.max(0,R-T), evt.cx, evt.cy, R+T);
+      grd.addColorStop(0,   `hsla(${hf1},${sf1}%,55%,0)`);
+      grd.addColorStop(0.4, `hsla(${hf1},${sf1}%,55%,${alpha*0.8})`);
+      grd.addColorStop(0.7, `hsla(${hf2},${sf2}%,50%,${alpha*0.5})`);
+      grd.addColorStop(1,   `hsla(${hf2},${sf2}%,50%,0)`);
+      ctx.fillStyle = grd;
+      ctx.fillRect(0,0,w,h);
     }
 
+    // Pass 2 — every ember on top, riding its wave's current radius
+    for (const evt of fireBurstEventsRef.current) {
+      const age = rt - evt.startT;
+      const frac = Math.min(1, age / evt.life);
+      const R = frac * maxSpread;
+      const alpha = Math.max(0, 1 - frac);
+      updateAndDrawRideEmbers(ctx, evt.embers, evt.cx, evt.cy, R, maxSpread, age, alpha, intensity);
+    }
+  });
+
+  // ── Particle Burst — a one-shot explosion of glowing particles flying
+  //    outward from the pressed button's edge, decelerating and fading out. ──
+  const burstRef = useCanvas(effect === "particleBurst", [speed, intensity], (ctx, w, h) => {
+    burstTRef.current += 0.016;
+    const rt = burstTRef.current;
+    const life = Math.max(speed, 0.5) * 0.5;
+
+    burstEventsRef.current = burstEventsRef.current.filter(e => rt - e.startT < e.life);
+    const cur = pressedRef.current, prev = prevPressedRef.current;
+    for (const idx of cur) {
+      if (!prev.has(idx)) {
+        const pos = btnPosRef.current[idx];
+        if (pos) {
+          const [hw, hh] = buttonHWHH(pos, w);
+          const n = 14 + Math.floor(Math.random()*10);
+          burstEventsRef.current.push({
+            startT: rt, life,
+            particles: genBurstParticles((pos.x/100)*w, (pos.y/100)*h, hw, hh, Math.max(w,h), n),
+          });
+        }
+      }
+    }
+    prevPressedRef.current = new Set(cur);
+
+    const col = reactColorRef.current;
+    const rr=parseInt(col.slice(1,3),16), rg=parseInt(col.slice(3,5),16), rb=parseInt(col.slice(5,7),16);
+
+    for (const evt of burstEventsRef.current) {
+      const age = rt - evt.startT;
+      const tn = Math.min(1, age / evt.life);
+      const fadeAlpha = Math.max(0, 1 - Math.pow(tn, 1.6)) * intensity;
+      if (fadeAlpha <= 0.01) continue;
+
+      for (const p of evt.particles) {
+        const decay = 1 - Math.exp(-p.drag * age);
+        let px = p.x0 + (p.vx / p.drag) * decay;
+        let py = p.y0 + (p.vy / p.drag) * decay;
+
+        // Perpendicular wander so tracks aren't perfectly straight radial lines —
+        // ramps in from zero at spawn, fades out as the particle settles.
+        const perpX = -Math.sin(p.angle), perpY = Math.cos(p.angle);
+        const jitter = Math.sin(age*p.jitterFreq + p.jitterPhase) * p.jitterAmp * Math.min(1, age*3) * (1-tn);
+        px += perpX * jitter;
+        py += perpY * jitter;
+
+        const flicker = 0.7 + 0.3*Math.sin(age*p.flickerSpeed + p.flickerPhase);
+        const size = p.size * (1 - 0.35*tn) * flicker;
+        if (size <= 0.15) continue;
+        const alpha = fadeAlpha * flicker;
+
+        const hue = reactRainbowRef.current ? (p.hueOff + age * 220) % 360 : 0;
+        const colorC = reactRainbowRef.current ? `hsla(${hue},100%,62%,` : `rgba(${rr},${rg},${rb},`;
+
+        ctx.save();
+        ctx.shadowBlur = 8; ctx.shadowColor = `${colorC}${alpha*0.8})`;
+        ctx.fillStyle = `${colorC}${alpha})`;
+        ctx.beginPath(); ctx.arc(px, py, size, 0, Math.PI*2); ctx.fill();
+
+        // Tiny bright core for extra pop
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = `rgba(255,255,255,${alpha*0.7})`;
+        ctx.beginPath(); ctx.arc(px, py, size*0.4, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+    }
   });
 
   return (
@@ -695,8 +934,10 @@ export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor
         <canvas ref={reactive3DRef}   style={{ ...makeCanvas(maskUrl), mixBlendMode: "overlay" as const }} />
         <canvas ref={reactiveGlowRef} style={makeCanvas(maskUrl)} />
       </>}
-      {effect === "orbitTrail"      && <canvas ref={orbitRef}    style={makeCanvas(maskUrl)} />}
-      {effect === "lightningStrike" && <canvas ref={lightningRef} style={makeCanvas(maskUrl)} />}
+      {effect === "reactiveReverse" && <canvas ref={reactiveReverseRef} style={makeCanvas(maskUrl)} />}
+      {effect === "reactiveElectric" && <canvas ref={reactiveElectricRef} style={makeCanvas(maskUrl)} />}
+      {effect === "reactiveFire" && <canvas ref={reactiveFireRef} style={makeCanvas(maskUrl)} />}
+      {effect === "particleBurst" && <canvas ref={burstRef} style={makeCanvas(maskUrl)} />}
     </div>
   );
 }

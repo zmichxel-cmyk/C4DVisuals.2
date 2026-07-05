@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useGamepad } from "../hooks/useGamepad";
 import { hexToRgba, STICK_COLORS } from "../lib/controllerLayout";
-import { LAYOUTS } from "../lib/layouts";
+import { LAYOUTS, ControllerType } from "../lib/layouts";
 import { ControllerConfig, LayoutOverrides } from "../types/config";
 import { LayoutEditor } from "./LayoutEditor";
 import { BodyEffectOverlay } from "./BodyEffectOverlay";
@@ -100,34 +100,43 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         transition: "filter 0.4s ease",
         pointerEvents: !gp.connected && !editMode ? "none" : "auto",
       }}>
+      {/* Drop shadow — a standalone silhouette layer rendered BEHIND both the RGB
+          glow and the controller art. Previously this was a `filter: drop-shadow()`
+          on the same layer as the controller art; since that layer paints above
+          the RGB glow in stacking order, the dark shadow silhouette was compositing
+          directly over the glow and dimming it heavily. Rendering the shadow as its
+          own bottom-most layer keeps it fully independent of the RGB glow. */}
+      {config.showShadow && config.controllerSkin && (() => {
+        const rad = (config.shadowAngle * Math.PI) / 180;
+        const dist = 16;
+        const x = Math.round(Math.sin(rad) * dist);
+        const y = Math.round(-Math.cos(rad) * dist);
+        const a = config.shadowIntensity;
+        const layers: React.CSSProperties[] = [
+          { filter: "brightness(0) blur(24px)", opacity: a,              transform: `translate(${x}px,${y}px)` },
+          { filter: "brightness(0) blur(8px)",  opacity: Math.min(a+0.1,1), transform: `translate(${Math.round(x*0.4)}px,${Math.round(y*0.4)}px)` },
+        ];
+        return layers.map((layerStyle, i) => (
+          isVideoSkin(config.controllerSkin) ? (
+            <video key={i} src={config.controllerSkin} autoPlay loop={config.controllerSkinLoop} muted playsInline
+              style={{ position:"absolute", inset:0, width:"100%", height:"100%",
+                objectFit: config.controllerSkinVideoFit ?? "contain", pointerEvents:"none", ...layerStyle }} />
+          ) : (
+            <div key={i} style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none",
+              background:`url("${config.controllerSkin}") center/contain no-repeat`, ...layerStyle }} />
+          )
+        ));
+      })()}
+
       {/* RGB body silhouette — sits behind the controller art, controller-body-only mask (no triggers) */}
       {config.rgbBodyEnabled && baseLayout.bodyMaskUrl && (
         <RgbBodyCanvas
-          maskUrl={baseLayout.bodyMaskUrl.startsWith("/") || baseLayout.bodyMaskUrl.startsWith("http")
-            ? baseLayout.bodyMaskUrl
-            : `/${baseLayout.bodyMaskUrl}`}
+          maskUrl={baseLayout.bodyMaskUrl}
           speed={config.rgbBodySpeed}
           mode={config.rgbBodyMode}
           intensity={config.rgbBodyIntensity}
-          color={
-            config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingColor
-            : config.rgbBodyMode === "reactive" ? config.rgbBodyReactiveColor
-            : config.rgbBodyWaveColor
-          }
-          rainbow={
-            config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingRainbow
-            : config.rgbBodyMode === "reactive" ? config.rgbBodyReactiveRainbow
-            : config.rgbBodyWaveRainbow
-          }
-          pressedButtons={config.rgbBodyMode === "reactive" ? new Set(
-            gp.buttons.map((pressed, i) => pressed ? i : -1).filter(i => i >= 0)
-          ) : undefined}
-          buttonPositions={config.rgbBodyMode === "reactive" ? (() => {
-            const pos: Record<number, { x: number; y: number }> = {};
-            buttons.forEach(b  => { pos[b.index]    = { x: b.x, y: b.y }; });
-            sticks.forEach( s  => { pos[s.pressBtn]  = { x: s.x, y: s.y }; });
-            return pos;
-          })() : undefined}
+          color={config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingColor : config.rgbBodyWaveColor}
+          rainbow={config.rgbBodyMode === "breathing" ? config.rgbBodyBreathingRainbow : config.rgbBodyWaveRainbow}
         />
       )}
 
@@ -136,26 +145,19 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
       <div className="absolute inset-0">
         {isVideoSkin(config.controllerSkin) ? (
           (() => {
-            const shadowFilter = config.showShadow ? (() => {
-              const rad = (config.shadowAngle * Math.PI) / 180;
-              const dist = 16;
-              const x = Math.round(Math.sin(rad) * dist);
-              const y = Math.round(-Math.cos(rad) * dist);
-              const a = config.shadowIntensity;
-              return `drop-shadow(${x}px ${y}px 24px rgba(0,0,0,${a})) drop-shadow(${Math.round(x*0.4)}px ${Math.round(y*0.4)}px 8px rgba(0,0,0,${Math.min(a+0.1,1)}))`;
-            })() : undefined;
             return (
-              /* Shadow + color correction go on the wrapper, NOT the video element.
+              /* Color correction goes on the wrapper, NOT the video element.
                  Applying CSS filter directly to <video> causes Chrome to composite
                  the video onto a white offscreen buffer before filtering, washing
-                 out all the colors. The wrapper approach keeps the video clean. */
+                 out all the colors. The wrapper approach keeps the video clean.
+                 Shadow is rendered separately above (see the dedicated shadow layer)
+                 so it can't interfere with the RGB glow's stacking. */
               <div style={{
                 position: "relative",
                 width: "100%", height: "100%",
                 filter: [
                   config.controllerSkinContrast !== 1 ? `contrast(${config.controllerSkinContrast})` : "",
                   config.controllerSkinSaturate !== 1 ? `saturate(${config.controllerSkinSaturate})` : "",
-                  shadowFilter ?? "",
                 ].filter(Boolean).join(" ") || undefined,
               }}>
                 <video
@@ -182,16 +184,6 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
               background: config.controllerSkin
                 ? `url("${config.controllerSkin}") center/contain no-repeat`
                 : undefined,
-              filter: config.showShadow
-                ? (() => {
-                    const rad = (config.shadowAngle * Math.PI) / 180;
-                    const dist = 16;
-                    const x = Math.round(Math.sin(rad) * dist);
-                    const y = Math.round(-Math.cos(rad) * dist);
-                    const a = config.shadowIntensity;
-                    return `drop-shadow(${x}px ${y}px 24px rgba(0,0,0,${a})) drop-shadow(${Math.round(x*0.4)}px ${Math.round(y*0.4)}px 8px rgba(0,0,0,${Math.min(a+0.1,1)}))`;
-                  })()
-                : undefined,
             }}
           >
 
@@ -215,16 +207,16 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           speed={config.bodyEffectSpeed}
           intensity={config.bodyEffectIntensity}
           maskUrl={config.controllerSkin}
-          glowColor={config.bodyEffect === "fire" ? config.fireColor1 : config.pulseGlowColor}
+          glowColor={(config.bodyEffect === "fire" || config.bodyEffect === "reactiveFire") ? config.fireColor1 : config.pulseGlowColor}
           fireColor2={config.fireColor2}
           fireGlowSpeed={config.fireGlowSpeed}
           fireEmberSpeed={config.fireEmberSpeed}
           reactiveColor={config.reactiveRippleColor}
           reactiveRainbow={config.reactiveRippleRainbow}
-          pressedButtons={["reactive","orbitTrail","lightningStrike"].includes(config.bodyEffect) ? new Set(
+          pressedButtons={["reactive","reactiveReverse","particleBurst","reactiveElectric","reactiveFire"].includes(config.bodyEffect) ? new Set(
             gp.buttons.map((pressed, i) => pressed ? i : -1).filter(i => i >= 0)
           ) : undefined}
-          buttonPositions={["reactive","orbitTrail","lightningStrike"].includes(config.bodyEffect) ? (() => {
+          buttonPositions={["reactive","reactiveReverse","particleBurst","reactiveElectric","reactiveFire"].includes(config.bodyEffect) ? (() => {
             const pos: Record<number, { x:number; y:number; size:number; shape:string; maskSw?:number; maskSh?:number; skinAspect?:number }> = {};
             const skinAspect = baseLayout.skinHeight / baseLayout.skinWidth;
             buttons.forEach(b => {
@@ -499,6 +491,13 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         </div>
       )}
       
+      {/* Watermark overlay — green screen keyed via canvas. Lives inside the
+          blur wrapper so it blurs along with everything else when
+          disconnected, and renders before the status box below so that box
+          stacks on top of it rather than being covered. */}
+      {config.showWatermark && !editMode && (
+        <WatermarkOverlay controllerType={config.controllerType} />
+      )}
       </div>{/* end blur wrapper */}
 
       {!gp.connected && !editMode && (
@@ -525,15 +524,11 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           </div>
         </div>
       )}
-      {/* Watermark overlay — green screen keyed via canvas */}
-      {config.showWatermark && !editMode && (
-        <WatermarkOverlay />
-      )}
     </div>
   );
 }
 
-function WatermarkOverlay() {
+function WatermarkOverlay({ controllerType }: { controllerType: ControllerType }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -561,6 +556,14 @@ function WatermarkOverlay() {
     };
   }, []);
 
+  // Each controller body sits a little differently in frame, so the
+  // watermark's vertical position is tuned per controller type rather than
+  // using one fixed value for all of them.
+  const watermarkTop =
+    controllerType === "xbox-one" || controllerType === "c4d1-edge" ? "12%"
+    : controllerType === "ps4" ? "7%"
+    : "3%";
+
   return (
     <video
       ref={videoRef}
@@ -569,10 +572,10 @@ function WatermarkOverlay() {
       playsInline
       style={{
         position: "absolute",
-        top: "3%",
+        top: watermarkTop,
         left: "50%",
         transform: "translateX(-50%)",
-        width: "95%",
+        width: "102%",
         pointerEvents: "none",
       }}
     />

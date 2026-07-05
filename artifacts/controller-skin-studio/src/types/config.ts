@@ -43,7 +43,7 @@ export interface ControllerConfig {
   stickShadowIntensity: number;    // 0-1
   stickShadowDistance: number;     // px
   stickShadowAngle: number;        // 0-360 degrees
-  bodyEffect: "none" | "pulseGlow" | "particles" | "fire" | "reactive" | "orbitTrail" | "lightningStrike";
+  bodyEffect: "none" | "pulseGlow" | "particles" | "fire" | "reactive" | "reactiveReverse" | "particleBurst" | "reactiveElectric" | "reactiveFire";
   bodyEffectSpeed: number;
   bodyEffectIntensity: number;
   pulseGlowColor: string;
@@ -55,22 +55,20 @@ export interface ControllerConfig {
   fireColor2: string;
   rgbBodyEnabled: boolean;
   rgbBodySpeed: number;
-  rgbBodyMode: "wave" | "breathing" | "reactive";
+  rgbBodyMode: "wave" | "breathing";
   rgbBodyIntensity: number;
   rgbBodyWaveColor: string;
   rgbBodyWaveRainbow: boolean;
   rgbBodyBreathingColor: string;
   rgbBodyBreathingRainbow: boolean;
-  rgbBodyReactiveColor: string;
-  rgbBodyReactiveRainbow: boolean;
 }
 
 export const DEFAULT_CONFIG: ControllerConfig = {
   controllerType: "xbox-one",
   overlayName: "My Controller",
-  controllerSkin: "/skins/xbox-one-base.png",
-  leftStickSkin: "/sticks/xbox-left.png",
-  rightStickSkin: "/sticks/xbox-right.png",
+  controllerSkin: "skins/xbox-one-base.png",
+  leftStickSkin: "sticks/xbox-left.png",
+  rightStickSkin: "sticks/xbox-right.png",
   controllerSkinLoop: true,
   controllerSkinVideoFit: "contain",
   controllerSkinContrast: 1,
@@ -124,8 +122,6 @@ export const DEFAULT_CONFIG: ControllerConfig = {
   rgbBodyWaveRainbow: true,
   rgbBodyBreathingColor: "#e40707",
   rgbBodyBreathingRainbow: true,
-  rgbBodyReactiveColor: "#e40707",
-  rgbBodyReactiveRainbow: true,
 };
 
 export interface ButtonOverride {

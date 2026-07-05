@@ -340,11 +340,11 @@ export interface MouseMaskDef {
 }
 
 export const DEFAULT_MOUSE_MASKS: MouseMaskDef[] = [
-  { id:"left",     src:"/mkb/mouse-left.png",     btnIndex:0, cx:28, cy:25, w:42, h:46, color:"#3b82f6" },
-  { id:"right",    src:"/mkb/mouse-right.png",    btnIndex:2, cx:72, cy:24, w:40, h:44, color:"#ef4444" },
-  { id:"scroll",   src:"/mkb/mouse-scroll.png",   btnIndex:1, cx:50, cy:14, w:18, h:16, color:"#22c55e" },
-  { id:"side_top", src:"/mkb/mouse-side-top.png", btnIndex:4, cx:5,  cy:42, w:12, h:18, color:"#f97316" },
-  { id:"side_bot", src:"/mkb/mouse-side-bot.png", btnIndex:3, cx:6,  cy:58, w:18, h:18, color:"#a855f7" },
+  { id:"left",     src:"mkb/mouse-left.png",     btnIndex:0, cx:28, cy:25, w:42, h:46, color:"#3b82f6" },
+  { id:"right",    src:"mkb/mouse-right.png",    btnIndex:2, cx:72, cy:24, w:40, h:44, color:"#ef4444" },
+  { id:"scroll",   src:"mkb/mouse-scroll.png",   btnIndex:1, cx:50, cy:14, w:18, h:16, color:"#22c55e" },
+  { id:"side_top", src:"mkb/mouse-side-top.png", btnIndex:4, cx:5,  cy:42, w:12, h:18, color:"#f97316" },
+  { id:"side_bot", src:"mkb/mouse-side-bot.png", btnIndex:3, cx:6,  cy:58, w:18, h:18, color:"#a855f7" },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -759,7 +759,7 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
           `}</style>
 
           {/* Layer 3.7: LED caps — alpha PNG, rings sit over the LED glow holes */}
-          <img src="/mkb/keyboard-LEDs.png" alt=""
+          <img src="mkb/keyboard-LEDs.png" alt=""
             className="absolute inset-0 w-full h-full object-cover pointer-events-none"
             style={{zIndex:5}}/>
 

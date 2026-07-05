@@ -9,6 +9,7 @@ import { LAYOUTS, CONTROLLER_TYPES } from "../lib/layouts";
 import { Move, Play, Save, FolderOpen, Trash2, Upload, X, ImageIcon, Loader2, Download, Film, Settings2 } from "lucide-react";
 import { useGamepad } from "../hooks/useGamepad";
 import { Popover, PopoverTrigger, PopoverContent } from "../components/ui/popover";
+import { LibraryPicker, LibraryEntry } from "../components/LibraryPicker";
 
 const MAX_PRESETS = 5;
 interface CtrlPreset { name: string; overrides: LayoutOverrides; savedAt: number; }
@@ -54,7 +55,7 @@ interface MkbSettings {
   mkbWidth: number; mkbHeight: number;
 }
 const DEFAULT_MKB_SETTINGS: MkbSettings = {
-  kbSkinUrl: "/mkb/keyboard-empty.png", kbButtonsUrl: "/mkb/keyboard-buttons.png", mouseSkinUrl: "/mkb/mouse.png",
+  kbSkinUrl: "mkb/keyboard-empty.png", kbButtonsUrl: "mkb/keyboard-buttons.png", mouseSkinUrl: "mkb/mouse.png",
   kbSkinVideoFit: "contain", kbSkinContrast: 1, kbSkinSaturate: 1,
   mouseSkinVideoFit: "contain", mouseSkinContrast: 1, mouseSkinSaturate: 1,
   mkbColor: "#ffffff", mkbRgbStyle: 1, mkbRainbow: false, mouseColor: "#ffffff",
@@ -241,13 +242,12 @@ export function Studio() {
   function handleResetOverrides() { setOverrides(DEFAULT_OVERRIDES); setEditMode(false); }
   function switchController(ctId: string) {
     const l = LAYOUTS[ctId];
-    const withSlash = (p: string) => p.startsWith("/") ? p : "/" + p;
     const pending = pendingSkins[ctId];
     handleChange({
       controllerType: ctId,
-      controllerSkin: pending?.controllerSkin ?? withSlash(l.defaultSkinUrl),
-      leftStickSkin: pending?.leftStickSkin ?? withSlash(l.defaultLeftStickUrl),
-      rightStickSkin: pending?.rightStickSkin ?? withSlash(l.defaultRightStickUrl),
+      controllerSkin: pending?.controllerSkin ?? l.defaultSkinUrl,
+      leftStickSkin: pending?.leftStickSkin ?? l.defaultLeftStickUrl,
+      rightStickSkin: pending?.rightStickSkin ?? l.defaultRightStickUrl,
     });
     if (pending) {
       setPendingSkins(prev => {
@@ -282,11 +282,10 @@ export function Studio() {
   function handleClearSlot(slot: "controllerSkin" | "leftStickSkin" | "rightStickSkin", controllerType: string) {
     const l = LAYOUTS[controllerType];
     if (!l) return;
-    const withSlash = (p: string) => p.startsWith("/") ? p : "/" + p;
     const defaults = {
-      controllerSkin:   withSlash(l.defaultSkinUrl),
-      leftStickSkin:    withSlash(l.defaultLeftStickUrl),
-      rightStickSkin:   withSlash(l.defaultRightStickUrl),
+      controllerSkin:   l.defaultSkinUrl,
+      leftStickSkin:    l.defaultLeftStickUrl,
+      rightStickSkin:   l.defaultRightStickUrl,
     };
     if (controllerType === configRef.current.controllerType) {
       handleChange({ [slot]: defaults[slot] });
@@ -351,10 +350,14 @@ export function Studio() {
       const toB64 = async (url: string): Promise<string> => {
         if (!url) return "";
         try {
-          const absUrl = url.startsWith('http') || url.startsWith('blob:') || url.startsWith('data:')
+          // fetch() resolves relative URLs against the current document on
+          // its own; manually prepending window.location.origin breaks under
+          // Electron's file:// protocol (origin serializes as the literal
+          // string "file://" with no path).
+          const resolvedUrl = url.startsWith('http') || url.startsWith('blob:') || url.startsWith('data:')
             ? url
-            : window.location.origin + url;
-          const res = await fetch(absUrl);
+            : url.startsWith('/') ? url.slice(1) : url;
+          const res = await fetch(resolvedUrl);
           const blob = await res.blob();
           return new Promise(resolve => {
             const r = new FileReader();
@@ -365,7 +368,7 @@ export function Studio() {
       };
 
       const [kbB64, keysB64, mouseB64, maskB64] = await Promise.all([
-        toB64(kbSkinUrl), toB64(kbButtonsUrl), toB64(mouseSkinUrl), toB64("/mkb/rgb-mask.png"),
+        toB64(kbSkinUrl), toB64(kbButtonsUrl), toB64(mouseSkinUrl), toB64("mkb/rgb-mask.png"),
       ]);
 
       // Build effective key positions (with overrides)
@@ -804,7 +807,7 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
       {/* ── Header ── */}
       <header className="flex-none border-b border-border bg-card/60 backdrop-blur px-4 py-2 flex items-center gap-3 flex-wrap">
         <div className="flex flex-col items-center gap-0.5">
-          <img src="/c4d_visuals.png" alt="C4D Visuals" style={{ height:"64px", width:"auto", objectFit:"contain", filter:"brightness(1.2)" }} />
+          <img src="c4d_visuals.png" alt="C4D Visuals" style={{ height:"64px", width:"auto", objectFit:"contain", filter:"brightness(1.2)" }} />
           <span className="font-bold text-[10px] tracking-widest uppercase text-muted-foreground/50">Controller Studio</span>
         </div>
 
@@ -1069,7 +1072,20 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
 }
 
 // ── MKB Skin Panel ────────────────────────────────────────────────────────
-function MkbUploadSlot({ label, value, defaultUrl, onUpload, onClear, accept, hint, allowVideo, isVideo, videoFit, onVideoFit, contrast, onContrast, saturate, onSaturate }: {
+/** Keyboard Body, Keyboard Keys, and Mouse libraries — each is a single flat
+ *  list, no tabs, strictly scoped to its own section (MKB only has one shape,
+ *  unlike controller body which varies per controller type). */
+const KEYBOARD_BODY_LIBRARY: LibraryEntry[] = [
+  { id:"kb-default", name:"Default", url:"mkb/keyboard-empty.png" },
+];
+const KEYBOARD_KEYS_LIBRARY: LibraryEntry[] = [
+  { id:"kb-keys-default", name:"Default", url:"mkb/keyboard-buttons.png" },
+];
+const MOUSE_LIBRARY: LibraryEntry[] = [
+  { id:"mouse-default", name:"Default", url:"mkb/mouse.png" },
+];
+
+function MkbUploadSlot({ label, value, defaultUrl, onUpload, onClear, accept, hint, allowVideo, isVideo, videoFit, onVideoFit, contrast, onContrast, saturate, onSaturate, onOpenLibrary }: {
   label: string; value: string; defaultUrl: string;
   onUpload: (u: string) => void; onClear: () => void;
   accept?: string; hint?: string; allowVideo?: boolean;
@@ -1077,6 +1093,7 @@ function MkbUploadSlot({ label, value, defaultUrl, onUpload, onClear, accept, hi
   videoFit?: "contain"|"cover"; onVideoFit?: (v:"contain"|"cover")=>void;
   contrast?: number; onContrast?: (v:number)=>void;
   saturate?: number; onSaturate?: (v:number)=>void;
+  onOpenLibrary?: () => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1090,7 +1107,15 @@ function MkbUploadSlot({ label, value, defaultUrl, onUpload, onClear, accept, hi
   const hasValue = !!value;
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</label>
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider leading-none">{label}</label>
+        {onOpenLibrary && (
+          <button onClick={onOpenLibrary}
+            className="flex-none flex items-center gap-0.5 text-[10px] text-primary border border-primary/40 hover:bg-primary/10 px-1.5 py-0.5 rounded transition-all font-medium whitespace-nowrap">
+            ＋ Library
+          </button>
+        )}
+      </div>
       {hasValue ? (
         <Popover>
           <div className="relative rounded-lg border border-border bg-card group">
@@ -1204,9 +1229,12 @@ function MkbSkinPanel({ kbSkinUrl, mouseSkinUrl, kbButtonsUrl, onKbChange, onMou
   mouseSkinContrast:number; onMouseContrast:(v:number)=>void;
   mouseSkinSaturate:number; onMouseSaturate:(v:number)=>void;
 }) {
-  const DEFAULT_KB = "/mkb/keyboard-empty.png";
-  const DEFAULT_KB_BTN = "/mkb/keyboard-buttons.png";
-  const DEFAULT_MOUSE = "/mkb/mouse.png";
+  const DEFAULT_KB = "mkb/keyboard-empty.png";
+  const DEFAULT_KB_BTN = "mkb/keyboard-buttons.png";
+  const DEFAULT_MOUSE = "mkb/mouse.png";
+  const [showKbLib, setShowKbLib] = React.useState(false);
+  const [showKbKeysLib, setShowKbKeysLib] = React.useState(false);
+  const [showMouseLib, setShowMouseLib] = React.useState(false);
   return (
     <div className="flex flex-col gap-5 p-4">
       <div className="flex items-center gap-2 pb-2 border-b border-border">
@@ -1219,17 +1247,34 @@ function MkbSkinPanel({ kbSkinUrl, mouseSkinUrl, kbButtonsUrl, onKbChange, onMou
         isVideo={isVideoUrl(kbSkinUrl)}
         videoFit={kbSkinVideoFit} onVideoFit={onKbVideoFit}
         contrast={kbSkinContrast} onContrast={onKbContrast}
-        saturate={kbSkinSaturate} onSaturate={onKbSaturate} />
+        saturate={kbSkinSaturate} onSaturate={onKbSaturate}
+        onOpenLibrary={() => setShowKbLib(true)} />
+      {showKbLib && (
+        <LibraryPicker title="Keyboard Body Library" section="kb-body" staticEntries={KEYBOARD_BODY_LIBRARY}
+          current={kbSkinUrl} onSelect={onKbChange} onClose={() => setShowKbLib(false)} />
+      )}
+
       <MkbUploadSlot label="Keyboard Keys PNG" value={kbButtonsUrl} defaultUrl={DEFAULT_KB_BTN}
         onUpload={onKbButtonsChange} onClear={() => onKbButtonsChange(DEFAULT_KB_BTN)}
-        accept="image/png,image/jpeg,image/webp" hint="Transparent key shapes overlay" />
+        accept="image/png,image/jpeg,image/webp" hint="Transparent key shapes overlay"
+        onOpenLibrary={() => setShowKbKeysLib(true)} />
+      {showKbKeysLib && (
+        <LibraryPicker title="Keyboard Keys Library" section="kb-keys" staticEntries={KEYBOARD_KEYS_LIBRARY}
+          current={kbButtonsUrl} onSelect={onKbButtonsChange} onClose={() => setShowKbKeysLib(false)} />
+      )}
+
       <MkbUploadSlot label="Mouse Skin" value={mouseSkinUrl} defaultUrl={DEFAULT_MOUSE}
         onUpload={onMouseChange} onClear={() => onMouseChange(DEFAULT_MOUSE)}
         accept="image/png,image/jpeg,image/webp,video/webm" allowVideo
         isVideo={isVideoUrl(mouseSkinUrl)}
         videoFit={mouseSkinVideoFit} onVideoFit={onMouseVideoFit}
         contrast={mouseSkinContrast} onContrast={onMouseContrast}
-        saturate={mouseSkinSaturate} onSaturate={onMouseSaturate} />
+        saturate={mouseSkinSaturate} onSaturate={onMouseSaturate}
+        onOpenLibrary={() => setShowMouseLib(true)} />
+      {showMouseLib && (
+        <LibraryPicker title="Mouse Skin Library" section="mouse" staticEntries={MOUSE_LIBRARY}
+          current={mouseSkinUrl} onSelect={onMouseChange} onClose={() => setShowMouseLib(false)} />
+      )}
     </div>
   );
 }

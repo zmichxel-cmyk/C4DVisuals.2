@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Upload, X, ImageIcon, Film, Settings2 } from "lucide-react";
 import { ControllerConfig, ControllerType } from "../types/config";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
+import { LibraryPicker, LibraryEntry } from "./LibraryPicker";
 
 interface Props {
   config: ControllerConfig;
@@ -31,55 +32,86 @@ interface UploadSlotProps {
 type StickEntry = { id: string; name: string; url: string };
 
 const C4D1_STICKS: StickEntry[] = [
-  { id:"c4d1-anodized",            name:"Anodized",          url:"/sticks/c4d1-anodized.png" },
-  { id:"c4d1-antique",             name:"Antique",           url:"/sticks/c4d1-antique.png" },
-  { id:"c4d1-black",               name:"Black",             url:"/sticks/c4d1-black.png" },
-  { id:"c4d1-black-carbon",        name:"Black Carbon",      url:"/sticks/c4d1-black-carbon.png" },
-  { id:"c4d1-bronze",              name:"Bronze",            url:"/sticks/c4d1-bronze.png" },
-  { id:"c4d1-ceramic-blue",        name:"Ceramic Blue",      url:"/sticks/c4d1-ceramic-blue.png" },
-  { id:"c4d1-chrome",              name:"Chrome",            url:"/sticks/c4d1-chrome.png" },
-  { id:"c4d1-fools-gold",          name:"Fools Gold",        url:"/sticks/c4d1-fools-gold.png" },
-  { id:"c4d1-glossy-black",        name:"Glossy Black",      url:"/sticks/c4d1-glossy-black.png" },
-  { id:"c4d1-gold",                name:"Gold",              url:"/sticks/c4d1-gold.png" },
-  { id:"c4d1-idk",                 name:"Gray",              url:"/sticks/c4d1-idk.png" },
-  { id:"c4d1-jade",                name:"Jade",              url:"/sticks/c4d1-jade.png" },
-  { id:"c4d1-knurled-titanium",    name:"Knurled Titanium",  url:"/sticks/c4d1-knurled-titanium.png" },
-  { id:"c4d1-light-blue",          name:"Light Blue",        url:"/sticks/c4d1-light-blue.png" },
-  { id:"c4d1-mechanical-chrome",   name:"Mechanical Chrome", url:"/sticks/c4d1-mechanical-chrome.png" },
-  { id:"c4d1-metallic-silver",     name:"Metallic Silver",   url:"/sticks/c4d1-metallic-silver.png" },
-  { id:"c4d1-silver",              name:"Silver",            url:"/sticks/c4d1-silver.png" },
-  { id:"c4d1-wood",                name:"Wood",              url:"/sticks/c4d1-wood.png" },
-  { id:"c4d1-wood-grain-metallic", name:"Wood Grain Metal",  url:"/sticks/c4d1-wood-grain-metallic.png" },
-  { id:"c4d1-yellow-zig-zag",      name:"Yellow Zig-Zag",    url:"/sticks/c4d1-yellow-zig-zag.png" },
+  { id:"c4d1-abyssal-iris",         name:"Abyssal Iris",      url:"sticks/c4d1-abyssal-iris.png" },
+  { id:"c4d1-anodized",            name:"Anodized",          url:"sticks/c4d1-anodized.png" },
+  { id:"c4d1-antique",             name:"Antique",           url:"sticks/c4d1-antique.png" },
+  { id:"c4d1-bismuth-bastion",     name:"Bismuth Bastion",   url:"sticks/c4d1-bismuth-bastion.png" },
+  { id:"c4d1-black",               name:"Black",             url:"sticks/c4d1-black.png" },
+  { id:"c4d1-black-carbon",        name:"Black Carbon",      url:"sticks/c4d1-black-carbon.png" },
+  { id:"c4d1-bronze",              name:"Bronze",            url:"sticks/c4d1-bronze.png" },
+  { id:"c4d1-ceramic-blue",        name:"Ceramic Blue",      url:"sticks/c4d1-ceramic-blue.png" },
+  { id:"c4d1-chrome",              name:"Chrome",            url:"sticks/c4d1-chrome.png" },
+  { id:"c4d1-fools-gold",          name:"Fools Gold",        url:"sticks/c4d1-fools-gold.png" },
+  { id:"c4d1-fossilized-amber",    name:"Fossilized Amber",  url:"sticks/c4d1-fossilized-amber.png" },
+  { id:"c4d1-galaxy",              name:"Galaxy",            url:"sticks/c4d1-galaxy.png" },
+  { id:"c4d1-gears-of-time",       name:"Gears of Time",     url:"sticks/c4d1-gears-of-time.png" },
+  { id:"c4d1-glossy-black",        name:"Glossy Black",      url:"sticks/c4d1-glossy-black.png" },
+  { id:"c4d1-glossy-black-opal",   name:"Glossy Black Opal", url:"sticks/c4d1-glossy-black-opal.png" },
+  { id:"c4d1-gold",                name:"Gold",              url:"sticks/c4d1-gold.png" },
+  { id:"c4d1-golden-hammered-copper", name:"Golden Hammered Copper", url:"sticks/c4d1-golden-hammered-copper.png" },
+  { id:"c4d1-idk",                 name:"Gray",              url:"sticks/c4d1-idk.png" },
+  { id:"c4d1-hieroglyphics",       name:"Hieroglyphics",     url:"sticks/c4d1-hieroglyphics.png" },
+  { id:"c4d1-hypnotized-green",    name:"Hypnotized Green",  url:"sticks/c4d1-hypnotized-green.png" },
+  { id:"c4d1-jade",                name:"Jade",              url:"sticks/c4d1-jade.png" },
+  { id:"c4d1-knurled-titanium",    name:"Knurled Titanium",  url:"sticks/c4d1-knurled-titanium.png" },
+  { id:"c4d1-light-blue",          name:"Light Blue",        url:"sticks/c4d1-light-blue.png" },
+  { id:"c4d1-mechanical-chrome",   name:"Mechanical Chrome", url:"sticks/c4d1-mechanical-chrome.png" },
+  { id:"c4d1-metallic-silver",     name:"Metallic Silver",   url:"sticks/c4d1-metallic-silver.png" },
+  { id:"c4d1-molten-lava",         name:"Molten Lava",       url:"sticks/c4d1-molten-lava.png" },
+  { id:"c4d1-silver",              name:"Silver",            url:"sticks/c4d1-silver.png" },
+  { id:"c4d1-stained-glass",       name:"Stained Glass",     url:"sticks/c4d1-stained-glass.png" },
+  { id:"c4d1-sterling-iris",       name:"Sterling Iris",     url:"sticks/c4d1-sterling-iris.png" },
+  { id:"c4d1-terraflow",           name:"Terraflow",         url:"sticks/c4d1-terraflow.png" },
+  { id:"c4d1-wood",                name:"Wood",              url:"sticks/c4d1-wood.png" },
+  { id:"c4d1-wood-grain-metallic", name:"Wood Grain Metal",  url:"sticks/c4d1-wood-grain-metallic.png" },
+  { id:"c4d1-wooden-opal",         name:"Wooden Opal",       url:"sticks/c4d1-wooden-opal.png" },
+  { id:"c4d1-yellow-zig-zag",      name:"Yellow Zig-Zag",    url:"sticks/c4d1-yellow-zig-zag.png" },
 ];
 
 const PS_STICKS: StickEntry[] = [
-  { id:"c4d-aluminum",            name:"Aluminum",         url:"/sticks/c4d-aluminum.png" },
-  { id:"c4d-antique",             name:"Antique",          url:"/sticks/c4d-antique.png" },
-  { id:"c4d-apoxy",               name:"Apoxy",            url:"/sticks/c4d-apoxy.png" },
-  { id:"c4d-basic-black",         name:"Basic Black",      url:"/sticks/c4d-basic-black.png" },
-  { id:"c4d-carbon-fiber",        name:"Carbon Fiber",     url:"/sticks/c4d-carbon-fiber.png" },
-  { id:"c4d-chrome",              name:"Chrome",           url:"/sticks/c4d-chrome.png" },
-  { id:"c4d-concrete",            name:"Concrete",         url:"/sticks/c4d-concrete.png" },
-  { id:"c4d-copper",              name:"Copper",           url:"/sticks/c4d-copper.png" },
-  { id:"c4d-glossy-black",        name:"Glossy Black",     url:"/sticks/c4d-glossy-black.png" },
-  { id:"c4d-gold",                name:"Gold",             url:"/sticks/c4d-gold.png" },
-  { id:"c4d-h-713",               name:"H-713",            url:"/sticks/c4d-h-713.png" },
-  { id:"c4d-marble",              name:"Marble",           url:"/sticks/c4d-marble.png" },
-  { id:"c4d-opal",                name:"Opal",             url:"/sticks/c4d-opal.png" },
-  { id:"c4d-platinum",            name:"Platinum",         url:"/sticks/c4d-platinum.png" },
-  { id:"c4d-rainbow-quartz",      name:"Rainbow Quartz",   url:"/sticks/c4d-rainbow-quartz.png" },
-  { id:"c4d-rust",                name:"Rust",             url:"/sticks/c4d-rust.png" },
-  { id:"c4d-stone",               name:"Stone",            url:"/sticks/c4d-stone.png" },
-  { id:"c4d-wood-grain-metallic", name:"Wood Grain Metal", url:"/sticks/c4d-wood-grain-metallic.png" },
+  { id:"c4d-aluminum",            name:"Aluminum",         url:"sticks/c4d-aluminum.png" },
+  { id:"c4d-antique",             name:"Antique",          url:"sticks/c4d-antique.png" },
+  { id:"c4d-apoxy",               name:"Apoxy",            url:"sticks/c4d-apoxy.png" },
+  { id:"c4d-basic-black",         name:"Basic Black",      url:"sticks/c4d-basic-black.png" },
+  { id:"c4d-black-swirl",         name:"Black Swirl",      url:"sticks/c4d-black-swirl.png" },
+  { id:"c4d-carbon-fiber",        name:"Carbon Fiber",     url:"sticks/c4d-carbon-fiber.png" },
+  { id:"c4d-chainlink",           name:"Chainlink",        url:"sticks/c4d-chainlink.png" },
+  { id:"c4d-chrome",              name:"Chrome",           url:"sticks/c4d-chrome.png" },
+  { id:"c4d-concrete",            name:"Concrete",         url:"sticks/c4d-concrete.png" },
+  { id:"c4d-copper",              name:"Copper",           url:"sticks/c4d-copper.png" },
+  { id:"c4d-cosmic-swirl",        name:"Cosmic Swirl",     url:"sticks/c4d-cosmic-swirl.png" },
+  { id:"c4d-gilded-onyx",         name:"Gilded Onyx",      url:"sticks/c4d-gilded-onyx.png" },
+  { id:"c4d-glossy-black",        name:"Glossy Black",     url:"sticks/c4d-glossy-black.png" },
+  { id:"c4d-gold",                name:"Gold",             url:"sticks/c4d-gold.png" },
+  { id:"c4d-gray-foam",           name:"Gray Foam",        url:"sticks/c4d-gray-foam.png" },
+  { id:"c4d-gunmetal",            name:"Gunmetal",         url:"sticks/c4d-gunmetal.png" },
+  { id:"c4d-h-713",               name:"H-713",            url:"sticks/c4d-h-713.png" },
+  { id:"c4d-iron-sun",            name:"Iron Sun",         url:"sticks/c4d-iron-sun.png" },
+  { id:"c4d-marble",              name:"Marble",           url:"sticks/c4d-marble.png" },
+  { id:"c4d-metallic-weave",      name:"Metallic Weave",   url:"sticks/c4d-metallic-weave.png" },
+  { id:"c4d-molten-magma",        name:"Molten Magma",     url:"sticks/c4d-molten-magma.png" },
+  { id:"c4d-mosaic-glass",        name:"Mosaic Glass",     url:"sticks/c4d-mosaic-glass.png" },
+  { id:"c4d-ocean-spray",         name:"Ocean Spray",      url:"sticks/c4d-ocean-spray.png" },
+  { id:"c4d-opal",                name:"Opal",             url:"sticks/c4d-opal.png" },
+  { id:"c4d-platinum",            name:"Platinum",         url:"sticks/c4d-platinum.png" },
+  { id:"c4d-prism-mosaic",        name:"Prism Mosaic",     url:"sticks/c4d-prism-mosaic.png" },
+  { id:"c4d-rainbow-quartz",      name:"Rainbow Quartz",   url:"sticks/c4d-rainbow-quartz.png" },
+  { id:"c4d-rust",                name:"Rust",             url:"sticks/c4d-rust.png" },
+  { id:"c4d-seafoam",             name:"Seafoam",          url:"sticks/c4d-seafoam.png" },
+  { id:"c4d-stone",               name:"Stone",            url:"sticks/c4d-stone.png" },
+  { id:"c4d-tactical-khaki",      name:"Tactical Khaki",   url:"sticks/c4d-tactical-khaki.png" },
+  { id:"c4d-wood-grain-metallic", name:"Wood Grain Metal", url:"sticks/c4d-wood-grain-metallic.png" },
 ];
 
-const STICK_LIB: Record<ControllerType, StickEntry[]> = {
-  "xbox-one":  C4D1_STICKS,
-  "c4d1-edge": C4D1_STICKS,
-  "ps4":       PS_STICKS,
-  "ps5":       PS_STICKS,
-  "c4d5-edge": PS_STICKS,
+/** Controller Body library — separate list per controller type, since each
+ *  type has a different body shape (no tabs to switch types; this section
+ *  is strictly for the currently-selected controller's own body skins). */
+const CONTROLLER_BODY_LIBRARY: Record<ControllerType, LibraryEntry[]> = {
+  "xbox-one":  [{ id:"xbox-one-default",  name:"Default", url:"skins/xbox-one-base.png" }],
+  "c4d1-edge": [{ id:"c4d1-edge-default", name:"Default", url:"skins/c4d1-edge-base.png" }],
+  "ps4":       [{ id:"ps4-default",       name:"Default", url:"skins/ps4-base.png" }],
+  "ps5":       [{ id:"ps5-default",       name:"Default", url:"skins/ps5-base.png" }],
+  "c4d5-edge": [{ id:"c4d5-edge-default", name:"Default", url:"skins/c4d5-edge-base.png" }],
 };
 
 /** Returns true if the skin value is an animated WebM (base64 data URL or blob URL). */
@@ -88,16 +120,21 @@ function isVideoSkin(value: string | null): boolean {
   return value.startsWith("data:video/") || value.startsWith("blob:");
 }
 
-/** Same-style library picker modal as the Bezel Library in ImageEditor. */
+/** Same-style library picker modal as the Bezel Library in ImageEditor.
+ *  Shows both stick libraries via tabs, defaulting to whichever matches the
+ *  active controller type — but either library can be picked from regardless
+ *  of controller type, since a stick image has no functional tie to it. */
 function StickLibraryPicker({
-  title, entries, current, onSelect, onClose,
+  defaultTab, current, onSelect, onClose,
 }: {
-  title: string;
-  entries: StickEntry[];
+  defaultTab: "c4d1" | "ps";
   current: string | null;
   onSelect: (url: string) => void;
   onClose: () => void;
 }) {
+  const [tab, setTab] = useState<"c4d1" | "ps">(defaultTab);
+  const entries = tab === "c4d1" ? C4D1_STICKS : PS_STICKS;
+
   return (
     <div
       style={{ position:"fixed", inset:0, zIndex:999, display:"flex", alignItems:"center", justifyContent:"center",
@@ -107,31 +144,62 @@ function StickLibraryPicker({
         background:"rgba(10,10,14,0.96)", border:"1px solid rgba(255,255,255,0.12)",
         borderRadius:18, padding:"22px 24px",
         boxShadow:"0 24px 64px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.06)",
-        width:340, display:"flex", flexDirection:"column", gap:16,
+        width:640, maxWidth:"92vw", display:"flex", flexDirection:"column", gap:16,
       }}>
-        {/* Header */}
+        {/* Header — tabs to switch library, close button */}
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <span style={{ fontSize:12, fontWeight:700, letterSpacing:"0.08em", color:"#fff", textTransform:"uppercase" }}>
-            {title}
-          </span>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={() => setTab("c4d1")}
+              style={{
+                background: tab === "c4d1" ? "rgba(228,7,7,0.18)" : "rgba(255,255,255,0.05)",
+                border:`1px solid ${tab === "c4d1" ? "#e40707" : "rgba(255,255,255,0.12)"}`,
+                borderRadius:8, padding:"6px 14px", cursor:"pointer",
+                fontSize:12, fontWeight:700, letterSpacing:"0.04em", color: tab === "c4d1" ? "#fff" : "#999",
+                transition:"border-color 0.15s, background 0.15s, color 0.15s",
+                display:"flex", alignItems:"center", gap:6,
+              }}>
+              C4D.1
+              <span style={{
+                fontSize:10, fontWeight:700, color: tab === "c4d1" ? "#fff" : "#777",
+                background: tab === "c4d1" ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
+                borderRadius:999, padding:"1px 6px", lineHeight:1.4,
+              }}>{C4D1_STICKS.length}</span>
+            </button>
+            <button onClick={() => setTab("ps")}
+              style={{
+                background: tab === "ps" ? "rgba(228,7,7,0.18)" : "rgba(255,255,255,0.05)",
+                border:`1px solid ${tab === "ps" ? "#e40707" : "rgba(255,255,255,0.12)"}`,
+                borderRadius:8, padding:"6px 14px", cursor:"pointer",
+                fontSize:12, fontWeight:700, letterSpacing:"0.04em", color: tab === "ps" ? "#fff" : "#999",
+                transition:"border-color 0.15s, background 0.15s, color 0.15s",
+                display:"flex", alignItems:"center", gap:6,
+              }}>
+              C4D.4/5
+              <span style={{
+                fontSize:10, fontWeight:700, color: tab === "ps" ? "#fff" : "#777",
+                background: tab === "ps" ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
+                borderRadius:999, padding:"1px 6px", lineHeight:1.4,
+              }}>{PS_STICKS.length}</span>
+            </button>
+          </div>
           <button onClick={onClose}
-            style={{ background:"none", border:"none", color:"#888", cursor:"pointer", fontSize:20, lineHeight:1 }}>×</button>
+            style={{ background:"none", border:"none", color:"#888", cursor:"pointer", fontSize:22, lineHeight:1 }}>×</button>
         </div>
 
         {/* Grid */}
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, maxHeight:280, overflowY:"auto", paddingRight:4 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:12, maxHeight:520, overflowY:"auto", paddingRight:4 }}>
           {entries.map(entry => (
             <button key={entry.id} onClick={() => { onSelect(entry.url); onClose(); }}
               style={{
                 background: current === entry.url ? "rgba(228,7,7,0.18)" : "rgba(255,255,255,0.05)",
                 border:`2px solid ${current === entry.url ? "#e40707" : "rgba(255,255,255,0.10)"}`,
-                borderRadius:10, padding:"8px 4px", cursor:"pointer",
-                display:"flex", flexDirection:"column", alignItems:"center", gap:6,
+                borderRadius:10, padding:"10px 6px", cursor:"pointer",
+                display:"flex", flexDirection:"column", alignItems:"center", gap:8,
                 transition:"border-color 0.15s, background 0.15s",
               }}>
               <img src={entry.url} alt={entry.name}
-                style={{ width:56, height:56, objectFit:"contain" }} />
-              <span style={{ fontSize:8, color:"#aaa", textAlign:"center", lineHeight:1.3 }}>{entry.name}</span>
+                style={{ width:84, height:84, objectFit:"contain" }} />
+              <span style={{ fontSize:10, color:"#aaa", textAlign:"center", lineHeight:1.3 }}>{entry.name}</span>
             </button>
           ))}
         </div>
@@ -212,6 +280,7 @@ function UploadSlot({ label, value, onUpload, onClear, hint, onOpenLibrary }: Up
 /** Controller Body slot — supports PNG and WebM, with a popover for video settings. */
 function BodySlot({ config, onChange }: { config: ControllerConfig; onChange: (u: Partial<ControllerConfig>) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [showLibrary, setShowLibrary] = useState(false);
   const isVideo = isVideoSkin(config.controllerSkin);
   const isTemplate = config.controllerSkin && !config.controllerSkin.startsWith("data:");
 
@@ -229,8 +298,24 @@ function BodySlot({ config, onChange }: { config: ControllerConfig; onChange: (u
 
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Controller Body</label>
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider leading-none">Controller Body</label>
+        <button onClick={() => setShowLibrary(true)}
+          className="flex-none flex items-center gap-0.5 text-[10px] text-primary border border-primary/40 hover:bg-primary/10 px-1.5 py-0.5 rounded transition-all font-medium whitespace-nowrap">
+          ＋ Library
+        </button>
+      </div>
 
+      {showLibrary && (
+        <LibraryPicker
+          title="Controller Body Library"
+          section={`body-${config.controllerType}`}
+          staticEntries={CONTROLLER_BODY_LIBRARY[config.controllerType] ?? []}
+          current={config.controllerSkin}
+          onSelect={(url) => onChange({ controllerSkin: url })}
+          onClose={() => setShowLibrary(false)}
+        />
+      )}
       {config.controllerSkin ? (
         <Popover>
           <div className="relative rounded-lg border border-border group" style={{
@@ -343,7 +428,8 @@ export { isVideoSkin };
 export function SkinPanel({ config, onChange, stickSizePx, bodySizeLabel }: Props) {
   const [showLeftLib,  setShowLeftLib]  = useState(false);
   const [showRightLib, setShowRightLib] = useState(false);
-  const lib = STICK_LIB[config.controllerType] ?? STICK_LIB["xbox-one"];
+  const defaultTab: "c4d1" | "ps" =
+    (config.controllerType === "xbox-one" || config.controllerType === "c4d1-edge") ? "c4d1" : "ps";
 
   return (
     <div className="flex flex-col gap-5 p-3">
@@ -395,8 +481,7 @@ export function SkinPanel({ config, onChange, stickSizePx, bodySizeLabel }: Prop
       {/* Left Thumbstick Library Picker */}
       {showLeftLib && (
         <StickLibraryPicker
-          title="Left Thumbstick Library"
-          entries={lib}
+          defaultTab={defaultTab}
           current={config.leftStickSkin}
           onSelect={(url) => onChange({ leftStickSkin: url })}
           onClose={() => setShowLeftLib(false)}
@@ -406,8 +491,7 @@ export function SkinPanel({ config, onChange, stickSizePx, bodySizeLabel }: Prop
       {/* Right Thumbstick Library Picker */}
       {showRightLib && (
         <StickLibraryPicker
-          title="Right Thumbstick Library"
-          entries={lib}
+          defaultTab={defaultTab}
           current={config.rightStickSkin}
           onSelect={(url) => onChange({ rightStickSkin: url })}
           onClose={() => setShowRightLib(false)}
