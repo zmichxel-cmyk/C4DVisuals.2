@@ -32,6 +32,15 @@ export function RgbBodyCanvas({ maskUrl, speed, mode, intensity, color, rainbow,
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tRef = useRef(0);
 
+  // Latest prop values, read live inside the tick loop below instead of being
+  // effect dependencies — dragging a color picker fires onChange continuously,
+  // and re-running the setup effect on every tick was tearing down and
+  // rebuilding the ResizeObserver + rAF loop dozens of times a second, causing
+  // visible stutter. Now the loop is created once per mount and just reads
+  // whatever's current each frame.
+  const paramsRef = useRef({ speed, mode, intensity, color, rainbow });
+  useEffect(() => { paramsRef.current = { speed, mode, intensity, color, rainbow }; });
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -47,13 +56,15 @@ export function RgbBodyCanvas({ maskUrl, speed, mode, intensity, color, rainbow,
       canvas.height = height;
       if (!started && width > 0 && height > 0) {
         started = true;
-        const ss = 1 / Math.max(speed, 0.5);
-        const [rr, rg, rb] = hexToRgb(color);
-        const getC = (hue: number, alpha: number) =>
-          rainbow ? `hsla(${((hue * 360) % 360 + 360) % 360},100%,55%,${alpha})`
-                  : `rgba(${rr},${rg},${rb},${alpha})`;
 
         const tick = () => {
+          const { speed, mode, intensity, color, rainbow } = paramsRef.current;
+          const ss = 1 / Math.max(speed, 0.5);
+          const [rr, rg, rb] = hexToRgb(color);
+          const getC = (hue: number, alpha: number) =>
+            rainbow ? `hsla(${((hue * 360) % 360 + 360) % 360},100%,55%,${alpha})`
+                    : `rgba(${rr},${rg},${rb},${alpha})`;
+
           tRef.current += 0.016 * ss;
           const t = tRef.current;
           const w = canvas.width, h = canvas.height;
@@ -99,7 +110,7 @@ export function RgbBodyCanvas({ maskUrl, speed, mode, intensity, color, rainbow,
 
     if (canvas.parentElement) ro.observe(canvas.parentElement);
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
-  }, [speed, mode, intensity, color, rainbow]);
+  }, []);
 
   return (
     <canvas

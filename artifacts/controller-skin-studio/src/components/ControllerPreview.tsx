@@ -128,6 +128,20 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
         ));
       })()}
 
+      {/* Black backdrop — same silhouette mask as the RGB layer below, filled
+          solid black so there's no transparency showing through behind the
+          RGB glow (mirrors the mouse/keyboard RGB backdrop treatment). */}
+      {config.rgbBodyEnabled && baseLayout.bodyMaskUrl && (
+        <div className="absolute inset-0 w-full h-full pointer-events-none" style={{
+          background: "#000",
+          WebkitMaskImage: `url("${baseLayout.bodyMaskUrl}")`,
+          maskImage: `url("${baseLayout.bodyMaskUrl}")`,
+          WebkitMaskSize: "contain", maskSize: "contain",
+          WebkitMaskPosition: "center", maskPosition: "center",
+          WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat",
+        }} />
+      )}
+
       {/* RGB body silhouette — sits behind the controller art, controller-body-only mask (no triggers) */}
       {config.rgbBodyEnabled && baseLayout.bodyMaskUrl && (
         <RgbBodyCanvas
@@ -213,10 +227,10 @@ export function ControllerPreview({ config, overrides, showButtonLabels, editMod
           fireEmberSpeed={config.fireEmberSpeed}
           reactiveColor={config.reactiveRippleColor}
           reactiveRainbow={config.reactiveRippleRainbow}
-          pressedButtons={["reactive","reactiveReverse","particleBurst","reactiveElectric","reactiveFire"].includes(config.bodyEffect) ? new Set(
+          pressedButtons={["reactive","reactiveReverse","particleBurst","reactiveFire"].includes(config.bodyEffect) ? new Set(
             gp.buttons.map((pressed, i) => pressed ? i : -1).filter(i => i >= 0)
           ) : undefined}
-          buttonPositions={["reactive","reactiveReverse","particleBurst","reactiveElectric","reactiveFire"].includes(config.bodyEffect) ? (() => {
+          buttonPositions={["reactive","reactiveReverse","particleBurst","reactiveFire"].includes(config.bodyEffect) ? (() => {
             const pos: Record<number, { x:number; y:number; size:number; shape:string; maskSw?:number; maskSh?:number; skinAspect?:number }> = {};
             const skinAspect = baseLayout.skinHeight / baseLayout.skinWidth;
             buttons.forEach(b => {

@@ -433,35 +433,6 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
 
   const logoDragRef = useRef<{ mode: "move" | "resize" | "rotate"; startX: number; startY: number; origPos: typeof logoPos; startAngle?: number } | null>(null);
 
-  // ── Home button exclusion zone ─────────────────────────────────────────────
-  // The C4D home button badge is treated as a circular no-go zone — no
-  // uploaded logo/image can be dragged, resized, or rotated on top of it.
-  // Uses proper rotated-rectangle-vs-circle math (closest point on the logo's
-  // rotated bounds to the home button's center) so this holds at any angle.
-  function logoOverlapsHomeButton(pos: typeof logoPos): boolean {
-    if (!homeButton) return false;
-    const cx = pos.x + pos.w / 2, cy = pos.y + pos.h / 2;
-    const rad = (-pos.rot * Math.PI) / 180;
-    const dx = homeButton.x - cx, dy = homeButton.y - cy;
-    // Home button center, transformed into the logo rectangle's local (unrotated) space
-    const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
-    const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
-    const clampedX = Math.max(-pos.w / 2, Math.min(pos.w / 2, localX));
-    const clampedY = Math.max(-pos.h / 2, Math.min(pos.h / 2, localY));
-    const closestDx = localX - clampedX, closestDy = localY - clampedY;
-    return Math.sqrt(closestDx * closestDx + closestDy * closestDy) < homeButton.size / 2;
-  }
-
-  // Applies a candidate logo position unless doing so would newly move the
-  // logo on top of the home button. If the logo is already overlapping for
-  // some other reason (e.g. a saved/pending placement), movement is still
-  // allowed freely so it never gets permanently stuck there.
-  function applyLogoPos(candidate: typeof logoPos) {
-    if (!homeButton) { setLogoPos(candidate); return; }
-    const alreadyOverlapping = logoOverlapsHomeButton(logoPos);
-    const wouldOverlap = logoOverlapsHomeButton(candidate);
-    if (alreadyOverlapping || !wouldOverlap) setLogoPos(candidate);
-  }
 
   function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -589,17 +560,17 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
     const dx = mx - drag.startX;
     const dy = my - drag.startY;
     if (drag.mode === "move") {
-      applyLogoPos({ ...drag.origPos, x: drag.origPos.x + dx, y: drag.origPos.y + dy });
+      setLogoPos({ ...drag.origPos, x: drag.origPos.x + dx, y: drag.origPos.y + dy });
     } else if (drag.mode === "resize") {
       const newW = Math.max(20, drag.origPos.w + dx * 1.5);
       const aspect = drag.origPos.h / drag.origPos.w;
-      applyLogoPos({ ...drag.origPos, w: newW, h: Math.round(newW * aspect) });
+      setLogoPos({ ...drag.origPos, w: newW, h: Math.round(newW * aspect) });
     } else if (drag.mode === "rotate") {
       const origCx = drag.origPos.x + drag.origPos.w / 2;
       const origCy = drag.origPos.y + drag.origPos.h / 2;
       const currentAngle = Math.atan2(my - origCy, mx - origCx) * 180 / Math.PI;
       const delta = currentAngle - (drag.startAngle ?? 0);
-      applyLogoPos({ ...drag.origPos, rot: (drag.origPos.rot + delta + 360) % 360 });
+      setLogoPos({ ...drag.origPos, rot: (drag.origPos.rot + delta + 360) % 360 });
     }
   }
 
@@ -618,15 +589,15 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
     const my = (e.clientY - rect.top) * scaleY;
     const dx = mx - drag.startX, dy = my - drag.startY;
     if (drag.mode === "move") {
-      applyLogoPos({ ...drag.origPos, x: drag.origPos.x + dx, y: drag.origPos.y + dy });
+      setLogoPos({ ...drag.origPos, x: drag.origPos.x + dx, y: drag.origPos.y + dy });
     } else if (drag.mode === "resize") {
       const newW = Math.max(20, drag.origPos.w + dx * 1.5);
-      applyLogoPos({ ...drag.origPos, w: newW, h: Math.round(newW * (drag.origPos.h / drag.origPos.w)) });
+      setLogoPos({ ...drag.origPos, w: newW, h: Math.round(newW * (drag.origPos.h / drag.origPos.w)) });
     } else if (drag.mode === "rotate") {
       const origCx = drag.origPos.x + drag.origPos.w / 2;
       const origCy = drag.origPos.y + drag.origPos.h / 2;
       const angle = Math.atan2(my - origCy, mx - origCx) * 180 / Math.PI;
-      applyLogoPos({ ...drag.origPos, rot: (drag.origPos.rot + angle - (drag.startAngle ?? 0) + 360) % 360 });
+      setLogoPos({ ...drag.origPos, rot: (drag.origPos.rot + angle - (drag.startAngle ?? 0) + 360) % 360 });
     }
   }
 
@@ -1715,16 +1686,17 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
     const hasWebM = videoFileRef.current || (isVideo && videoUrl);
     if (hasWebM) {
       window.dispatchEvent(new CustomEvent("bezel-video-loop", { detail: { loop: videoLoop } }));
-      if (bezels.length === 0) {
-        // No bezels — export the raw WebM unchanged
+      if (bezels.length === 0 && !homeButton) {
+        // No bezels or home button overlay — export the raw WebM unchanged
         finalize(videoFileRef.current
           ? URL.createObjectURL(videoFileRef.current)
           : videoUrl!);
         return;
       }
-      // Bezels present — composite the current video frame + bezels into a PNG.
+      // Bezels and/or home button present — composite the current video frame
+      // + overlays into a PNG.
       // (WebM frames can't be re-encoded here without MediaRecorder, so we export
-      //  the still frame. The user can remove bezels first if they need animated export.)
+      //  the still frame. The user can remove overlays first if they need animated export.)
       const vidEl = videoEditRef.current;
       const W = source.width, H = source.height;
       const tmp = document.createElement("canvas");
@@ -2407,8 +2379,8 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
 
             <Section label="Placement">
               <div className="grid grid-cols-2 gap-x-2 gap-y-1 mb-1.5">
-                {([["X", logoPos.x, (v: number) => applyLogoPos({ ...logoPos, x: v })],
-                   ["Y", logoPos.y, (v: number) => applyLogoPos({ ...logoPos, y: v })]] as const).map(([l, val, set]) => (
+                {([["X", logoPos.x, (v: number) => setLogoPos({ ...logoPos, x: v })],
+                   ["Y", logoPos.y, (v: number) => setLogoPos({ ...logoPos, y: v })]] as const).map(([l, val, set]) => (
                   <label key={l} className="flex items-center gap-1">
                     <span className="text-muted-foreground w-3">{l}</span>
                     <input type="number" value={Math.round(val as number)}
@@ -2423,7 +2395,7 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
                   <input type="number" value={Math.round(logoPos.w)}
                     onChange={e => {
                       const nw = Number(e.target.value);
-                      applyLogoPos({ ...logoPos, w: nw, h: lockAspect ? Math.round(nw * logoPos.h / (logoPos.w || 1)) : logoPos.h });
+                      setLogoPos({ ...logoPos, w: nw, h: lockAspect ? Math.round(nw * logoPos.h / (logoPos.w || 1)) : logoPos.h });
                     }}
                     className="flex-1 min-w-0 text-[10px] bg-muted/30 border border-border rounded px-1 py-0.5 text-right" />
                 </label>
@@ -2432,7 +2404,7 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
                   <input type="number" value={Math.round(logoPos.h)}
                     onChange={e => {
                       const nh = Number(e.target.value);
-                      applyLogoPos({ ...logoPos, h: nh, w: lockAspect ? Math.round(nh * logoPos.w / (logoPos.h || 1)) : logoPos.w });
+                      setLogoPos({ ...logoPos, h: nh, w: lockAspect ? Math.round(nh * logoPos.w / (logoPos.h || 1)) : logoPos.w });
                     }}
                     className="flex-1 min-w-0 text-[10px] bg-muted/30 border border-border rounded px-1 py-0.5 text-right" />
                 </label>
@@ -2443,7 +2415,7 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
                 <span className="text-muted-foreground">Lock aspect ratio</span>
               </label>
               <NumRow label="Rotation" value={Math.round(logoPos.rot)} unit="°" min={0} max={360} step={1}
-                onChange={v => applyLogoPos({ ...logoPos, rot: v })} />
+                onChange={v => setLogoPos({ ...logoPos, rot: v })} />
             </Section>
           </React.Fragment>) : (
             <div className="flex flex-col items-center justify-center gap-2 py-6 text-center text-muted-foreground/40">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Settings, Download, Zap, Palette, Tag, Loader2, Sparkles, ChevronDown } from "lucide-react";
 import { ControllerConfig, LayoutOverrides } from "../types/config";
 import { LAYOUTS } from "../lib/layouts";
@@ -52,13 +52,37 @@ function Section({ icon: Icon, title }: { icon: React.ComponentType<{ size?: num
 }
 
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  // Native color inputs fire onChange continuously while dragging — often
+  // faster than the app can afford to re-render (every call cascades into
+  // setConfig, which re-renders the whole Studio tree). Local state keeps the
+  // swatch/hex label instantly responsive, while the upstream onChange (the
+  // expensive one) is coalesced to at most once per animation frame instead
+  // of once per native event.
+  const [local, setLocal] = useState(value);
+  const latestRef = useRef(value);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => { setLocal(value); latestRef.current = value; }, [value]);
+  useEffect(() => () => { if (rafRef.current != null) cancelAnimationFrame(rafRef.current); }, []);
+
+  function handleInput(v: string) {
+    setLocal(v);
+    latestRef.current = v;
+    if (rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        onChange(latestRef.current);
+      });
+    }
+  }
+
   return (
     <div className="flex items-center justify-between gap-1.5">
       <span className="text-xs text-muted-foreground leading-tight truncate">{label}</span>
       <div className="flex items-center gap-1 flex-none">
-        <input type="color" value={value} onChange={e => onChange(e.target.value)}
+        <input type="color" value={local} onChange={e => handleInput(e.target.value)}
           className="w-6 h-6 rounded cursor-pointer border border-border bg-card p-0.5" />
-        <span className="text-[10px] font-mono text-foreground/50 w-[52px]">{value}</span>
+        <span className="text-[10px] font-mono text-foreground/50 w-[52px]">{local}</span>
       </div>
     </div>
   );
@@ -271,7 +295,6 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
                 { id: "fire",           label: "🔥 Fire"       },
                 { id: "reactive",       label: "⚡ Reactive"   },
                 { id: "reactiveReverse",label: "🔄 Reverse"    },
-                { id: "reactiveElectric",label:"🌩️ Electric"  },
                 { id: "reactiveFire",   label: "🔥 Reactive Fire" },
                 { id: "particleBurst",  label: "💥 Burst"      },
               ] as const).map(p => (

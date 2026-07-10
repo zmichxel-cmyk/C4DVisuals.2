@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 
-export type BodyEffectType = "none" | "pulseGlow" | "particles" | "fire" | "reactive" | "reactiveReverse" | "particleBurst" | "reactiveElectric" | "reactiveFire";
+export type BodyEffectType = "none" | "pulseGlow" | "particles" | "fire" | "reactive" | "reactiveReverse" | "particleBurst" | "reactiveFire";
 
 interface Props {
   effect: BodyEffectType;
@@ -206,10 +206,6 @@ export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor
   // ── Reactive Reverse event store ───────────────────────────────────────────
   const reverseRipplesRef  = useRef<{ cx:number; cy:number; startT:number; edgeR:number }[]>([]);
   const reverseRealTRef    = useRef(0);
-
-  // ── Reactive Electric event store ──────────────────────────────────────────
-  const electricEventsRef = useRef<{ cx:number; cy:number; startT:number; life:number; seed:number }[]>([]);
-  const electricTRef      = useRef(0);
 
   // ── Reactive Fire event store ──────────────────────────────────────────────
   const fireBurstEventsRef = useRef<{ cx:number; cy:number; startT:number; life:number; embers:RideEmber[] }[]>([]);
@@ -729,70 +725,6 @@ export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor
     }
   });
 
-  // ── Reactive Electric — a crackling, jagged ring (re-jittered every frame
-  //    for a "static" flicker) with a few short tangent sparks, instead of a
-  //    smooth expanding wave. ──
-  const reactiveElectricRef = useCanvas(effect === "reactiveElectric", [speed, intensity], (ctx, w, h) => {
-    electricTRef.current += 0.016;
-    const rt = electricTRef.current;
-    const life = Math.max(speed, 0.5) * 0.22;
-
-    electricEventsRef.current = electricEventsRef.current.filter(e => rt - e.startT < life);
-    const cur = pressedRef.current, prev = prevPressedRef.current;
-    for (const idx of cur) {
-      if (!prev.has(idx)) {
-        const pos = btnPosRef.current[idx];
-        if (pos) electricEventsRef.current.push({ cx:(pos.x/100)*w, cy:(pos.y/100)*h, startT: rt, life, seed: Math.random()*1000 });
-      }
-    }
-    prevPressedRef.current = new Set(cur);
-
-    ctx.clearRect(0,0,w,h);
-    const maxSpread = Math.max(w,h) * 0.85;
-    const SEGMENTS = 28;
-
-    for (const evt of electricEventsRef.current) {
-      const age = rt - evt.startT;
-      const frac = Math.min(1, age / evt.life);
-      const R = frac * maxSpread;
-      const alpha = Math.max(0, 1 - frac) * intensity;
-      if (alpha <= 0.02 || R < 1) continue;
-
-      ctx.save();
-      ctx.beginPath();
-      for (let s=0; s<=SEGMENTS; s++) {
-        const ang = (s/SEGMENTS)*Math.PI*2;
-        const jitter = (Math.sin(ang*7 + evt.seed + rt*40) * 0.5 + (Math.random()-0.5)) * R * 0.18;
-        const rr = Math.max(2, R + jitter);
-        const x = evt.cx + Math.cos(ang)*rr, y = evt.cy + Math.sin(ang)*rr;
-        if (s===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-      }
-      ctx.closePath();
-      ctx.strokeStyle = `rgba(140,210,255,${alpha})`;
-      ctx.lineWidth = 2;
-      ctx.shadowBlur = 16; ctx.shadowColor = `rgba(160,220,255,${alpha*0.9})`;
-      ctx.stroke();
-      ctx.strokeStyle = `rgba(255,255,255,${alpha*0.8})`;
-      ctx.lineWidth = 0.8;
-      ctx.shadowBlur = 4;
-      ctx.stroke();
-
-      // A few tangent spark spikes shooting off the ring at random points
-      for (let k=0; k<5; k++) {
-        const ang = (((evt.seed*13 + k*71) % 360) * Math.PI/180) + rt*3;
-        const bx = evt.cx + Math.cos(ang)*R, by = evt.cy + Math.sin(ang)*R;
-        const spikeLen = R*0.12 + Math.random()*R*0.1;
-        const ex = bx + Math.cos(ang)*spikeLen, ey = by + Math.sin(ang)*spikeLen;
-        ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(ex,ey);
-        ctx.strokeStyle = `rgba(200,235,255,${alpha*0.9*Math.random()})`;
-        ctx.lineWidth = 1.2;
-        ctx.shadowBlur = 8; ctx.shadowColor = `rgba(180,225,255,${alpha*0.7})`;
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-  });
-
   // ── Reactive Fire — a ripple rendered in the same Fire Color 1/2 palette as
   //    the ambient fire effect, plus embers using the same per-kind rendering
   //    as the regular fire embers — but their position rides the wave's own
@@ -935,7 +867,6 @@ export function BodyEffectOverlay({ effect, speed, intensity, maskUrl, glowColor
         <canvas ref={reactiveGlowRef} style={makeCanvas(maskUrl)} />
       </>}
       {effect === "reactiveReverse" && <canvas ref={reactiveReverseRef} style={makeCanvas(maskUrl)} />}
-      {effect === "reactiveElectric" && <canvas ref={reactiveElectricRef} style={makeCanvas(maskUrl)} />}
       {effect === "reactiveFire" && <canvas ref={reactiveFireRef} style={makeCanvas(maskUrl)} />}
       {effect === "particleBurst" && <canvas ref={burstRef} style={makeCanvas(maskUrl)} />}
     </div>

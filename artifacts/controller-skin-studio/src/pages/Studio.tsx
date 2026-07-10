@@ -202,7 +202,14 @@ export function Studio() {
   const bodySizeLabel = `${bodyW} × ${bodyH} px`;
 
   useEffect(() => {
-    saveConfig(config);
+    // Debounced — saveConfig JSON.stringifies the whole config (which can carry
+    // multi-MB base64 skin images/videos) and writes it to localStorage
+    // synchronously. Rapid-fire updates (e.g. dragging inside a native color
+    // picker, which fires onChange continuously) were re-running that heavy
+    // write on every single tick, blocking the main thread and making the
+    // picker visibly lag behind the cursor.
+    const t = setTimeout(() => saveConfig(config), 400);
+    return () => clearTimeout(t);
   }, [config]);
 
   useEffect(() => {

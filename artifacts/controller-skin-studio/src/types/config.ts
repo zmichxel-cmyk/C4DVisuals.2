@@ -43,7 +43,7 @@ export interface ControllerConfig {
   stickShadowIntensity: number;    // 0-1
   stickShadowDistance: number;     // px
   stickShadowAngle: number;        // 0-360 degrees
-  bodyEffect: "none" | "pulseGlow" | "particles" | "fire" | "reactive" | "reactiveReverse" | "particleBurst" | "reactiveElectric" | "reactiveFire";
+  bodyEffect: "none" | "pulseGlow" | "particles" | "fire" | "reactive" | "reactiveReverse" | "particleBurst" | "reactiveFire";
   bodyEffectSpeed: number;
   bodyEffectIntensity: number;
   pulseGlowColor: string;
