@@ -186,9 +186,8 @@ function RgbCanvas({ style, color, rainbow, pressedKeys, keyPositions }: {
     <canvas ref={canvasRef} width={1344} height={799}
       className="absolute inset-0 w-full h-full pointer-events-none"
       style={{
-        zIndex:2,
-        WebkitMaskImage: "url(/mkb/rgb-mask.png)",
-        maskImage: "url(/mkb/rgb-mask.png)",
+        WebkitMaskImage: `url(${import.meta.env.BASE_URL}mkb/keyboard-mask.png)`,
+        maskImage: `url(${import.meta.env.BASE_URL}mkb/keyboard-mask.png)`,
         WebkitMaskSize: "100% 100%",
         maskSize: "100% 100%",
         WebkitMaskRepeat: "no-repeat",
@@ -339,12 +338,13 @@ export interface MouseMaskDef {
   color: string;
 }
 
+const _B = import.meta.env.BASE_URL;
 export const DEFAULT_MOUSE_MASKS: MouseMaskDef[] = [
-  { id:"left",     src:"mkb/mouse-left.png",     btnIndex:0, cx:28, cy:25, w:42, h:46, color:"#3b82f6" },
-  { id:"right",    src:"mkb/mouse-right.png",    btnIndex:2, cx:72, cy:24, w:40, h:44, color:"#ef4444" },
-  { id:"scroll",   src:"mkb/mouse-scroll.png",   btnIndex:1, cx:50, cy:14, w:18, h:16, color:"#22c55e" },
-  { id:"side_top", src:"mkb/mouse-side-top.png", btnIndex:4, cx:5,  cy:42, w:12, h:18, color:"#f97316" },
-  { id:"side_bot", src:"mkb/mouse-side-bot.png", btnIndex:3, cx:6,  cy:58, w:18, h:18, color:"#a855f7" },
+  { id:"left",     src:`${_B}mkb/mouse-left.png`,     btnIndex:0, cx:28, cy:25, w:42, h:46, color:"#3b82f6" },
+  { id:"right",    src:`${_B}mkb/mouse-right.png`,    btnIndex:2, cx:72, cy:24, w:40, h:44, color:"#ef4444" },
+  { id:"scroll",   src:`${_B}mkb/mouse-scroll.png`,   btnIndex:1, cx:50, cy:14, w:18, h:16, color:"#22c55e" },
+  { id:"side_top", src:`${_B}mkb/mouse-side-top.png`, btnIndex:4, cx:5,  cy:42, w:12, h:18, color:"#f97316" },
+  { id:"side_bot", src:`${_B}mkb/mouse-side-bot.png`, btnIndex:3, cx:6,  cy:58, w:18, h:18, color:"#a855f7" },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -452,7 +452,7 @@ function MouseView({skinUrl, color, editMode, opacity=1, glow=6, innerFade=false
         {/* RGB body layer — masked to mouse skin silhouette, sits BEHIND the skin */}
         {mouseRgbEnabled && !isVideoSkin(skinUrl) && (
           <RgbBodyCanvas
-            maskUrl={skinUrl}
+            maskUrl={`${import.meta.env.BASE_URL}mkb/mouse-mask.png`}
             mode={mouseRgbMode}
             speed={mouseRgbSpeed}
             intensity={mouseRgbIntensity}
@@ -687,9 +687,56 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
           }}
           onClick={e=>{if(editMode)e.stopPropagation();}}>
 
-          {/* Layer 1: Keyboard skin — color correction wrapper keeps filter off the <video> element */}
+          {/* Always-on black backdrop — clipped to keyboard shape, keeps cutouts opaque when RGB is off */}
+          <img src={`${import.meta.env.BASE_URL}mkb/keyboard-black.png`}
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            style={{zIndex:0}} />
+
+          {/* RGB canvas — sits on top of black backdrop */}
+          <div className="absolute inset-0 w-full h-full pointer-events-none"
+            style={{zIndex:0, opacity:kbOpacity}}>
+            <RgbCanvas style={rgbStyle} color={color} rainbow={rainbow}
+              pressedKeys={new Set([...pressedKeys].filter(k => !STYLE_CODES.includes(k)))}
+              keyPositions={keyPositions}/>
+          </div>
+
+          {/* Layer 1: LED indicators — behind skin, glow shows through transparent cutouts */}
+          {[
+            { key: "Digit6", cx: 72.8, cy: 22.74 },
+            { key: "Digit7", cx: 77.6, cy: 22.68 },
+            { key: "Digit8", cx: 82.3, cy: 22.77 },
+          ].map((led) => {
+            const mode = ledActive.get(led.key);
+            const active = mode !== undefined;
+            return (
+              <div key={led.key} style={{
+                position: "absolute",
+                left: `${led.cx}%`, top: `${led.cy}%`,
+                transform: "translate(-50%, -50%)",
+                width: "4.0%", height: "7.0%",
+                borderRadius: "50%",
+                background: active
+                  ? mode === 2
+                    ? "radial-gradient(circle, #ff8080 0%, #ff0000 70%)"
+                    : "radial-gradient(circle, #ff6060 0%, #cc0000 70%)"
+                  : "#0a0000",
+                animation: mode === 2 ? "ledRgbCycle 2s linear infinite" : "none",
+                transition: "background 0.08s",
+                zIndex: 1,
+                pointerEvents: "none",
+              }} />
+            );
+          })}
+          <style>{`
+            @keyframes ledRgbCycle {
+              0%   { filter: hue-rotate(0deg) saturate(1.4); }
+              100% { filter: hue-rotate(360deg) saturate(1.4); }
+            }
+          `}</style>
+
+          {/* Layer 2: Keyboard skin — transparent holes let RGB and LEDs show through */}
           <div className="absolute inset-0 w-full h-full pointer-events-none" style={{
-            zIndex:1,
+            zIndex:2,
             filter:[kbSkinContrast!==1?`contrast(${kbSkinContrast})`:"",kbSkinSaturate!==1?`saturate(${kbSkinSaturate})`:""].filter(Boolean).join(" ")||undefined,
           }}>
             {isVideoSkin(keyboardSkinUrl)
@@ -699,14 +746,6 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
               :<img src={keyboardSkinUrl} alt="Keyboard"
                  className="absolute inset-0 w-full h-full object-cover pointer-events-none"/>
             }
-          </div>
-
-          {/* Layer 2: RGB canvas — opacity and glow from keyboard appearance settings */}
-          <div className="absolute inset-0 w-full h-full pointer-events-none"
-            style={{zIndex:2, opacity:kbOpacity}}>
-            <RgbCanvas style={rgbStyle} color={color} rainbow={rainbow}
-              pressedKeys={new Set([...pressedKeys].filter(k => !STYLE_CODES.includes(k)))}
-              keyPositions={keyPositions}/>
           </div>
 
           {/* Layer 3: Keyboard keys — transparent key shapes sit on top of RGB.
@@ -720,48 +759,6 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
                   className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                   style={{zIndex:3}}/>
           )}
-
-          {/* Layer 3.5: LED indicators — solid red on 1st press, RGB cycling on 2nd press, off on 3rd */}
-          {[
-            { key: "Digit6", cx: 71.87, cy: 22.07 },
-            { key: "Digit7", cx: 77.64, cy: 21.87 },
-            { key: "Digit8", cx: 83.47, cy: 22.04 },
-          ].map((led) => {
-            const mode = ledActive.get(led.key); // undefined=off, 1=solid red, 2=RGB cycle
-            const active = mode !== undefined;
-            return (
-              <div key={led.key} style={{
-                position: "absolute",
-                left: `${led.cx}%`, top: `${led.cy}%`,
-                transform: "translate(-50%, -50%)",
-                width: "3.0%", height: "5.2%",
-                borderRadius: "50%",
-                background: active
-                  ? "radial-gradient(circle, #ff8080 0%, #ff0000 50%, #880000 100%)"
-                  : "radial-gradient(circle, #2a0000 0%, #0a0000 100%)",
-                boxShadow: active
-                  ? mode===2
-                    ? "0 0 2px 1px rgba(255,255,255,0.5), 0 0 6px 2px rgba(255,255,255,0.3)"
-                    : "0 0 2px 1px rgba(255,0,0,0.6), 0 0 5px 2px rgba(255,0,0,0.25)"
-                  : "none",
-                animation: mode===2 ? "ledRgbCycle 2s linear infinite" : "none",
-                transition: "background 0.08s, box-shadow 0.08s",
-                zIndex: 4,
-                pointerEvents: "none",
-              }} />
-            );
-          })}
-          <style>{`
-            @keyframes ledRgbCycle {
-              0%   { filter: hue-rotate(0deg) saturate(1.4); }
-              100% { filter: hue-rotate(360deg) saturate(1.4); }
-            }
-          `}</style>
-
-          {/* Layer 3.7: LED caps — alpha PNG, rings sit over the LED glow holes */}
-          <img src="mkb/keyboard-LEDs.png" alt=""
-            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-            style={{zIndex:5}}/>
 
           {/* Layer 4: Draggable key markers */}
           <div className="absolute inset-0 w-full h-full" style={{zIndex:6}}>

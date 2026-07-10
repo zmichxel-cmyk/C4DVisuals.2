@@ -121,7 +121,7 @@ export function Studio() {
 
   // Images exported from the Editor tab for controllers other than the
   // currently-active one; applied automatically when that controller is opened.
-  const [pendingSkins, setPendingSkins] = useState<Partial<Record<string, Partial<Pick<ControllerConfig, "controllerSkin" | "leftStickSkin" | "rightStickSkin">>>>>({});
+  const [pendingSkins, setPendingSkins] = useState<Partial<Record<string, Partial<Pick<ControllerConfig, "controllerSkin" | "leftStickSkin" | "rightStickSkin" | "homeButtonZone">>>>>({});
 
   // MKB skins
   const [mkbSettingsInit] = useState(loadMkbSettings);
@@ -248,6 +248,9 @@ export function Studio() {
       controllerSkin: pending?.controllerSkin ?? l.defaultSkinUrl,
       leftStickSkin: pending?.leftStickSkin ?? l.defaultLeftStickUrl,
       rightStickSkin: pending?.rightStickSkin ?? l.defaultRightStickUrl,
+      // A layout's default skin has no home button placed on it — only a
+      // pending custom bake carries protected-zone data.
+      homeButtonZone: pending?.homeButtonZone ?? null,
     });
     if (pending) {
       setPendingSkins(prev => {
@@ -265,15 +268,19 @@ export function Studio() {
   // image to the chosen skin slot for the target controller, without leaving the editor.
   // If exporting to the currently-active controller, applies immediately via handleChange.
   // Otherwise stores it in pendingSkins so it's applied when that controller is next opened.
-  function handleExportFromEditor(dataUrl: string, slot: "controllerSkin" | "leftStickSkin" | "rightStickSkin", controllerType: string) {
+  function handleExportFromEditor(dataUrl: string, slot: "controllerSkin" | "leftStickSkin" | "rightStickSkin", controllerType: string, homeButtonZone: ControllerConfig["homeButtonZone"]) {
     // Use configRef.current (not the closed-over `config`) so this always reads
     // the live controllerType even if called from an async callback or stale closure.
     if (controllerType === configRef.current.controllerType) {
-      handleChange({ [slot]: dataUrl });
+      handleChange({ [slot]: dataUrl, ...(slot === "controllerSkin" ? { homeButtonZone } : {}) });
     } else {
       setPendingSkins(prev => ({
         ...prev,
-        [controllerType]: { ...(prev[controllerType] ?? {}), [slot]: dataUrl },
+        [controllerType]: {
+          ...(prev[controllerType] ?? {}),
+          [slot]: dataUrl,
+          ...(slot === "controllerSkin" ? { homeButtonZone } : {}),
+        },
       }));
     }
   }
@@ -288,11 +295,14 @@ export function Studio() {
       rightStickSkin:   l.defaultRightStickUrl,
     };
     if (controllerType === configRef.current.controllerType) {
-      handleChange({ [slot]: defaults[slot] });
+      // Resetting the controller body back to the layout default also clears
+      // the protected zone — the default skin has no home button on it.
+      handleChange({ [slot]: defaults[slot], ...(slot === "controllerSkin" ? { homeButtonZone: null } : {}) });
     } else {
       setPendingSkins(prev => {
         const existing = { ...(prev[controllerType] ?? {}) };
         delete existing[slot];
+        if (slot === "controllerSkin") delete existing.homeButtonZone;
         return Object.keys(existing).length > 0
           ? { ...prev, [controllerType]: existing }
           : (({ [controllerType]: _, ...rest }) => rest)(prev);
@@ -952,9 +962,9 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
         <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           <div className="flex-1 flex flex-col items-center justify-center p-4 gap-2 min-h-0">
             {mkbMode ? (
-              <div className="flex items-center justify-center w-full flex-1 min-h-0">
-              <div className="inline-flex rounded-xl overflow-hidden shadow-2xl border"
-                style={{ borderColor:"hsl(var(--border))", backgroundImage:"linear-gradient(45deg,#1a1a2e 25%,transparent 25%),linear-gradient(-45deg,#1a1a2e 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1a1a2e 75%),linear-gradient(-45deg,transparent 75%,#1a1a2e 75%)", backgroundSize:"20px 20px", backgroundPosition:"0 0,0 10px,10px -10px,-10px 0px", backgroundColor:"#0f0f1a" }}>
+              <div className="flex items-center justify-center w-full flex-1 min-h-0 rounded-xl"
+                style={{ backgroundImage:"url(editor-checker-tile.png)", backgroundSize:"136px 54px", backgroundRepeat:"repeat", backgroundColor:"#1a1a22" }}>
+              <div className="inline-flex rounded-xl overflow-hidden">
                 <MkbView
                   color={mkbColor}
                   keyPressColor={keyPressColor}
@@ -990,12 +1000,11 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
               </div>
             ) : (
               <>
-                <div className="w-full flex-1 min-h-0 flex items-center justify-center">
+                <div className="w-full flex-1 min-h-0 flex items-center justify-center rounded-xl"
+                  style={editMode ? {} : { backgroundImage: "url(editor-checker-tile.png)", backgroundSize: "136px 54px", backgroundRepeat: "repeat", backgroundColor: "#1a1a22" }}>
                   <div className="w-full h-full max-w-3xl flex items-center">
-                    <div className="w-full rounded-xl overflow-hidden shadow-2xl border"
-                      style={editMode
-                        ? { borderColor: "hsl(262 80% 65% / 0.6)", borderWidth: "2px" }
-                        : { borderColor: "hsl(var(--border))", backgroundImage: "linear-gradient(45deg,#1a1a2e 25%,transparent 25%),linear-gradient(-45deg,#1a1a2e 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1a1a2e 75%),linear-gradient(-45deg,transparent 75%,#1a1a2e 75%)", backgroundSize: "20px 20px", backgroundPosition: "0 0,0 10px,10px -10px,-10px 0px", backgroundColor: "#0f0f1a" }}>
+                    <div className={`w-full rounded-xl overflow-hidden ${editMode ? "border shadow-2xl" : ""}`}
+                      style={editMode ? { borderColor: "hsl(262 80% 65% / 0.6)", borderWidth: "2px" } : undefined}>
                       <ControllerPreview config={config} overrides={overrides} showButtonLabels={showButtonLabels}
                         editMode={editMode} onOverridesChange={setOverrides} />
                     </div>
@@ -1120,8 +1129,8 @@ function MkbUploadSlot({ label, value, defaultUrl, onUpload, onClear, accept, hi
         <Popover>
           <div className="relative rounded-lg border border-border bg-card group">
             <div className="w-full h-36 p-2 rounded-lg overflow-hidden" style={{
-              backgroundImage:"linear-gradient(45deg,#2a2a35 25%,transparent 25%),linear-gradient(-45deg,#2a2a35 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#2a2a35 75%),linear-gradient(-45deg,transparent 75%,#2a2a35 75%)",
-              backgroundSize:"12px 12px", backgroundPosition:"0 0,0 6px,6px -6px,-6px 0px", backgroundColor:"#1a1a22",
+              backgroundImage:"url(editor-checker-tile.png)",
+              backgroundSize:"136px 54px", backgroundRepeat:"repeat", backgroundColor:"#1a1a22",
             }}>
               {isVideo
                 ? <video src={value} autoPlay loop muted playsInline className="w-full h-full object-contain" />

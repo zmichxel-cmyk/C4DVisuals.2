@@ -239,9 +239,9 @@ function UploadSlot({ label, value, onUpload, onClear, hint, onOpenLibrary }: Up
       </div>
       {value ? (
         <div className="relative rounded-lg border border-border group" style={{
-          backgroundImage: "linear-gradient(45deg, #2a2a35 25%, transparent 25%), linear-gradient(-45deg, #2a2a35 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a35 75%), linear-gradient(-45deg, transparent 75%, #2a2a35 75%)",
-          backgroundSize: "12px 12px",
-          backgroundPosition: "0 0, 0 6px, 6px -6px, -6px 0px",
+          backgroundImage: "url(editor-checker-tile.png)",
+          backgroundSize: "136px 54px",
+          backgroundRepeat: "repeat",
           backgroundColor: "#1a1a22",
         }}>
           <div className="w-full h-28 p-3">
@@ -319,9 +319,9 @@ function BodySlot({ config, onChange }: { config: ControllerConfig; onChange: (u
       {config.controllerSkin ? (
         <Popover>
           <div className="relative rounded-lg border border-border group" style={{
-            backgroundImage: "linear-gradient(45deg, #2a2a35 25%, transparent 25%), linear-gradient(-45deg, #2a2a35 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a35 75%), linear-gradient(-45deg, transparent 75%, #2a2a35 75%)",
-            backgroundSize: "12px 12px",
-            backgroundPosition: "0 0, 0 6px, 6px -6px, -6px 0px",
+            backgroundImage: "url(editor-checker-tile.png)",
+            backgroundSize: "136px 54px",
+            backgroundRepeat: "repeat",
             backgroundColor: "#1a1a22",
           }}>
             <div className="w-full h-28 p-3">

@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Upload, Eraser, Paintbrush, Wand2, Undo2, RotateCcw, ZoomIn, ZoomOut, Image as ImageIcon, Square, Circle, Check, X, ArrowRightCircle, MousePointer, ChevronDown } from "lucide-react";
 import { ControllerType, CONTROLLER_TYPES } from "../lib/layouts";
+import { HomeButtonZone } from "../types/config";
 import { addToCustomLibrary } from "./LibraryPicker";
 
 type Tool = "select" | "wand" | "erase" | "restore" | "crop-rect" | "crop-circle";
@@ -77,11 +78,11 @@ const BEZEL_LIBRARY = [
 const MAX_HISTORY = 20;
 
 interface Props {
-  onExportToSkin:    (dataUrl: string, slot: ExportSlot, controllerType: ControllerType) => void;
+  onExportToSkin:    (dataUrl: string, slot: ExportSlot, controllerType: ControllerType, homeButtonZone: HomeButtonZone | null) => void;
   onClearSlot:       (slot: ExportSlot, controllerType: ControllerType) => void;
   onExportMkbSkin:   (dataUrl: string, slot: MkbSlot) => void;
   onClearMkbSlot:    (slot: MkbSlot) => void;
-  pendingSkins:      Partial<Record<string, Partial<Record<ExportSlot, string>>>>;
+  pendingSkins:      Partial<Record<string, Partial<Record<ExportSlot, string>> & { homeButtonZone?: HomeButtonZone | null }>>;
   activeControllerType: ControllerType;
   activeConfig:      { controllerSkin: string | null; leftStickSkin: string | null; rightStickSkin: string | null };
   activeMkbConfig:   { kbSkin: string | null; mouseSkin: string | null; kbButtonsSkin: string | null };
@@ -199,10 +200,9 @@ function DualRow({ label, lo, hi, setLo, setHi }: {
 // Defined outside ImageEditor so React never remounts them on re-render.
 
 const checkerStyle: React.CSSProperties = {
-  backgroundImage:
-    "linear-gradient(45deg, #2a2a35 25%, transparent 25%), linear-gradient(-45deg, #2a2a35 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a35 75%), linear-gradient(-45deg, transparent 75%, #2a2a35 75%)",
-  backgroundSize: "20px 20px",
-  backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
+  backgroundImage: "url(editor-checker-tile.png)",
+  backgroundSize: "136px 54px",
+  backgroundRepeat: "repeat",
   backgroundColor: "#1a1a22",
 };
 
@@ -231,8 +231,9 @@ function SlotCard({ label, value, filled, isSelected, onClick, onClear, onDirect
   }
 
   return (
-    <button onClick={onClick}
-      className={`relative flex flex-col gap-1 text-left rounded-lg border-2 p-2 transition-all ${isSelected ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"}`}>
+    <div role="button" tabIndex={0} onClick={onClick}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
+      className={`relative flex flex-col gap-1 text-left rounded-lg border-2 p-2 transition-all cursor-pointer ${isSelected ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"}`}>
       <span className="text-xs font-medium text-foreground/80">{label}</span>
       <div className="relative w-full h-24 rounded-md overflow-hidden border border-border" style={checkerStyle}>
         {filled && value ? (
@@ -276,7 +277,7 @@ function SlotCard({ label, value, filled, isSelected, onClick, onClear, onDirect
           )}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -1647,7 +1648,17 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
   }
 
   function confirmExport(dataUrl: string, slot: ExportSlot, target: ControllerType) {
-    onExportToSkin(dataUrl, slot, target);
+    // Only the controller body slot has a meaningful protected zone — a
+    // thumbstick skin doesn't have a home button on it.
+    const zone: HomeButtonZone | null =
+      slot === "controllerSkin" && homeButton && imgDims
+        ? {
+            xPercent: (homeButton.x / imgDims.w) * 100,
+            yPercent: (homeButton.y / imgDims.h) * 100,
+            sizePercent: (homeButton.size / imgDims.w) * 100,
+          }
+        : null;
+    onExportToSkin(dataUrl, slot, target, zone);
     setExportDone(true);
     setTimeout(() => setExportDone(false), 1500);
   }
@@ -2094,9 +2105,15 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
         onMouseDown={e => { if (e.target === e.currentTarget) setSelectedBezel(null); }}>
         {!hasImage && (
           <button onClick={() => fileInputRef.current?.click()}
-            className="flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground transition-colors p-12 border-2 border-dashed border-border rounded-xl hover:border-primary/40">
-            <ImageIcon size={32} />
-            <span className="text-sm">Upload a PNG or WebM to start editing</span>
+            className="group flex flex-col items-center gap-3 text-white/90 transition-all p-12 border-2 border-dashed border-white/25 hover:border-primary rounded-xl"
+            style={{
+              background: "rgba(10,10,14,0.88)",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.06)",
+            }}>
+            <ImageIcon size={36} className="text-white/90 group-hover:text-primary transition-colors" />
+            <span className="text-sm font-medium text-white/90 group-hover:text-primary transition-colors">Upload a PNG or WebM to start editing</span>
           </button>
         )}
         <div className="relative" style={{
