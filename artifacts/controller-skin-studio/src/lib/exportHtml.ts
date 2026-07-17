@@ -149,7 +149,7 @@ function obfuscateScript(js: string): string {
 
 export async function generateExportHtml(config: ControllerConfig, overrides: LayoutOverrides): Promise<string> {
   const baseLayout = LAYOUTS[config.controllerType];
-  const SHIFT_BOX_UP = ["ps4","ps5","c4d5-edge"].includes(config.controllerType);
+  const SHIFT_BOX_UP = ["c4d4","c4d5","c4d5-edge"].includes(config.controllerType);
 
   // Disconnected-box px values below are scaled relative to the export
   // canvas width so the box stays the same proportion of the controller as
@@ -455,7 +455,7 @@ export async function generateExportHtml(config: ControllerConfig, overrides: La
     text-align:center;
     box-shadow:0 ${vw(8)} ${vw(32)} rgba(0,0,0,0.9), 0 ${vw(2)} ${vw(8)} rgba(0,0,0,0.8), 0 0 0 ${vw(1)} rgba(255,255,255,0.06);
     min-width:${vw(220)};
-    ${config.controllerType === "ps4" ? "margin-bottom:10%;" : SHIFT_BOX_UP ? "margin-bottom:14%;" : ""}
+    ${config.controllerType === "c4d4" ? "margin-bottom:10%;" : SHIFT_BOX_UP ? "margin-bottom:14%;" : ""}
   }
   #disconnected-box img { width:${vw(160)}; margin:0 auto ${vw(14)}; display:block; }
   #disconnected-box .title { font-size:${vw(12)}; font-weight:600; color:rgba(255,255,255,0.9); margin:0 0 ${vw(5)}; }
@@ -1315,8 +1315,8 @@ ${config.showWatermark ? `` : ""}
     // watermark's vertical position is tuned per controller type rather than
     // using one fixed value for all of them.
     vid.style.cssText = 'position:absolute;top:${
-      config.controllerType === "xbox-one" || config.controllerType === "c4d1-edge" ? "12%"
-      : config.controllerType === "ps4" ? "7%"
+      config.controllerType === "c4d1" || config.controllerType === "c4d1-edge" ? "12%"
+      : config.controllerType === "c4d4" ? "7%"
       : "3%"
     };left:50%;transform:translateX(-50%);width:102%;pointer-events:none;';
     // Appended inside #controller-blur-wrap (not #controller itself) so it

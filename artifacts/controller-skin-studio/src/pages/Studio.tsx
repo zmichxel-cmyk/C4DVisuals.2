@@ -8,16 +8,49 @@ import { ControllerConfig, DEFAULT_CONFIG, LayoutOverrides, DEFAULT_OVERRIDES } 
 import { LAYOUTS, CONTROLLER_TYPES } from "../lib/layouts";
 import { Move, Play, Save, FolderOpen, Trash2, Upload, X, ImageIcon, Loader2, Download, Film, Settings2 } from "lucide-react";
 import { useGamepad } from "../hooks/useGamepad";
+import { useThrottledColor } from "../hooks/useThrottledColor";
 import { Popover, PopoverTrigger, PopoverContent } from "../components/ui/popover";
-import { LibraryPicker, LibraryEntry } from "../components/LibraryPicker";
+import { LibraryPicker, LibraryEntry, loadPresets, savePresets } from "../components/LibraryPicker";
 
-const MAX_PRESETS = 5;
-interface CtrlPreset { name: string; overrides: LayoutOverrides; savedAt: number; }
+// Full snapshot of a controller preset — both the layout overrides (button/
+// stick position tweaks) AND the full appearance config (skins, colors, body
+// effects, RGB body, bezels, home button, logo — everything else). Presets
+// used to only carry `overrides`, so loading one silently dropped every other
+// setting; `config` here is what fixes that.
+interface CtrlPreset { name: string; config: ControllerConfig; overrides: LayoutOverrides; savedAt: number; }
+// Legacy localStorage key (kept for one-time migration) vs. the disk-file
+// "kind" name — see loadPresets/savePresets in LibraryPicker.tsx. Presets are
+// written as real files under the app's userData folder in Electron, bounded
+// only by actual disk space, not the ~5-10MB localStorage quota.
 function ctrlPresetKey(t: string) { return `css-presets-${t}`; }
-function loadCtrlPresets(t: string): CtrlPreset[] { try { return JSON.parse(localStorage.getItem(ctrlPresetKey(t)) ?? "[]"); } catch { return []; } }
-function saveCtrlPresets(t: string, p: CtrlPreset[]) { localStorage.setItem(ctrlPresetKey(t), JSON.stringify(p)); }
+function ctrlPresetKind(t: string) { return `ctrl-${t}`; }
+function loadCtrlPresets(t: string): Promise<CtrlPreset[]> { return loadPresets<CtrlPreset>(ctrlPresetKind(t), ctrlPresetKey(t)); }
+async function saveCtrlPresets(t: string, p: CtrlPreset[]): Promise<void> {
+  const ok = await savePresets(ctrlPresetKind(t), ctrlPresetKey(t), p);
+  if (!ok) window.alert("Couldn't save preset — you're out of storage space. Try deleting an old preset (especially ones with video skins) and saving again.");
+}
 
 const CONFIG_KEY = "css-config";
+// Old controller type ids / default asset paths, from before the
+// trademark-name cleanup (xbox-one/ps4/ps5 -> c4d1/c4d4/c4d5). A session
+// saved before that rename would otherwise load back with a controllerType
+// that no longer exists in LAYOUTS, breaking anywhere that indexes it
+// without a fallback (e.g. exportHtml.ts).
+const LEGACY_CONTROLLER_TYPE_MAP: Record<string, ControllerConfig["controllerType"]> = {
+  "xbox-one": "c4d1", "ps4": "c4d4", "ps5": "c4d5",
+};
+const LEGACY_ASSET_PATH_MAP: Record<string, string> = {
+  "skins/xbox-one-base.png": "skins/c4d1-base.png",
+  "skins/ps4-base.png": "skins/c4d4-base.png",
+  "skins/ps5-base.png": "skins/c4d5-base.png",
+  "sticks/xbox-left.png": "sticks/c4d1-left.png",
+  "sticks/xbox-right.png": "sticks/c4d1-right.png",
+  "sticks/ps4-left.png": "sticks/c4d4-left.png",
+  "sticks/ps4-right.png": "sticks/c4d4-right.png",
+  "sticks/ps5-left.png": "sticks/c4d5-left.png",
+  "sticks/ps5-right.png": "sticks/c4d5-right.png",
+};
+
 function loadSavedConfig(): ControllerConfig {
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
@@ -25,6 +58,12 @@ function loadSavedConfig(): ControllerConfig {
     const parsed = JSON.parse(raw);
     // Remove legacy overlay field that was stored during development
     delete parsed.controllerSkinLogoOverlay;
+    if (parsed.controllerType in LEGACY_CONTROLLER_TYPE_MAP) {
+      parsed.controllerType = LEGACY_CONTROLLER_TYPE_MAP[parsed.controllerType];
+    }
+    for (const slot of ["controllerSkin", "leftStickSkin", "rightStickSkin"] as const) {
+      if (parsed[slot] in LEGACY_ASSET_PATH_MAP) parsed[slot] = LEGACY_ASSET_PATH_MAP[parsed[slot]];
+    }
     return { ...DEFAULT_CONFIG, ...parsed };
   } catch { return DEFAULT_CONFIG; }
 }
@@ -67,7 +106,7 @@ const DEFAULT_MKB_SETTINGS: MkbSettings = {
   mouseRgbEnabled: false, mouseRgbMode: "wave", mouseRgbSpeed: 6,
   mouseRgbIntensity: 1, mouseRgbColor: "#e40707", mouseRgbRainbow: true,
   mkbShowShadow: false, mkbShadowIntensity: 0.8, mkbShadowAngle: 180,
-  mkbWidth: 1920, mkbHeight: 1080,
+  mkbWidth: 2560, mkbHeight: 1440,
 };
 const MKB_SETTINGS_KEY = "css-mkb-settings";
 function loadMkbSettings(): MkbSettings {
@@ -90,6 +129,12 @@ function loadMkbSettings(): MkbSettings {
       mkbShadowAngle: parsed.mkbShadowAngle ?? DEFAULT_MKB_SETTINGS.mkbShadowAngle,
       keyPressOpacity: parsed.keyPressOpacity ?? DEFAULT_MKB_SETTINGS.keyPressOpacity,
       keyPressGlow: parsed.keyPressGlow ?? DEFAULT_MKB_SETTINGS.keyPressGlow,
+      // One-time bump — a saved size still sitting at the *old* default
+      // (1920x1080) was never deliberately chosen, just inherited from
+      // DEFAULT_MKB_SETTINGS before it changed to 2560x1440. Anything else
+      // (an actual custom size) is left alone.
+      mkbWidth: (parsed.mkbWidth === 1920 && parsed.mkbHeight === 1080) ? DEFAULT_MKB_SETTINGS.mkbWidth : (parsed.mkbWidth ?? DEFAULT_MKB_SETTINGS.mkbWidth),
+      mkbHeight: (parsed.mkbWidth === 1920 && parsed.mkbHeight === 1080) ? DEFAULT_MKB_SETTINGS.mkbHeight : (parsed.mkbHeight ?? DEFAULT_MKB_SETTINGS.mkbHeight),
     };
   } catch { return DEFAULT_MKB_SETTINGS; }
 }
@@ -108,11 +153,11 @@ export function Studio() {
   // Ref always holds the latest config value — used in callbacks that may close over stale state
   const configRef = React.useRef(config);
   configRef.current = config;
-  const [overrides, setOverrides] = useState<LayoutOverrides>(() => {
-    const initial = loadSavedConfig();
-    const presets = loadCtrlPresets(initial.controllerType);
-    return presets[0]?.overrides ?? DEFAULT_OVERRIDES;
-  });
+  // Preset-derived state (overrides, mkbPresets, key/mouse overrides below)
+  // starts at its default and is filled in asynchronously by the mount
+  // effect further down — preset storage now lives on disk (via Electron
+  // IPC), which can't be read synchronously the way localStorage could.
+  const [overrides, setOverrides] = useState<LayoutOverrides>(DEFAULT_OVERRIDES);
   const [showButtonLabels, setShowButtonLabels] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [mkbMode, setMkbMode] = useState(false);
@@ -167,21 +212,15 @@ export function Studio() {
   // Controller presets
   const [ctrlPresets, setCtrlPresets] = useState<CtrlPreset[]>([]);
   // MKB presets
-  const [mkbPresets, setMkbPresets] = useState<MkbPreset[]>(() => loadMkbPresets());
+  const [mkbPresets, setMkbPresets] = useState<MkbPreset[]>([]);
   // Shared preset UI
   const [showPresets, setShowPresets] = useState(false);
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [saveInput, setSaveInput] = useState("");
 
   // MKB key/mask overrides lifted up from MkbView so header save can access them
-  const [keyOverrides, setKeyOverrides] = useState<Record<string,{cx:number;cy:number;w:number;h:number}>>(() => {
-    const presets = loadMkbPresets();
-    return presets[0]?.keyOverrides ?? {};
-  });
-  const [mouseOverrides, setMouseOverrides] = useState<{id:string;cx:number;cy:number;w:number;h:number}[]>(() => {
-    const presets = loadMkbPresets();
-    return presets[0]?.mouseOverrides ?? [];
-  });
+  const [keyOverrides, setKeyOverrides] = useState<Record<string,{cx:number;cy:number;w:number;h:number}>>({});
+  const [mouseOverrides, setMouseOverrides] = useState<{id:string;cx:number;cy:number;w:number;h:number}[]>([]);
   // Refs so export always reads latest values regardless of closure staleness
   const keyOverridesRef = React.useRef<Record<string,{cx:number;cy:number;w:number;h:number}>>({});
   const mouseOverridesRef = React.useRef<{id:string;cx:number;cy:number;w:number;h:number}[]>([]);
@@ -191,9 +230,9 @@ export function Studio() {
   React.useEffect(()=>{ keyOverridesRef.current = keyOverrides; },[keyOverrides]);
 
   const gp = useGamepad();
-  const baseLayout = LAYOUTS[config.controllerType] ?? LAYOUTS["xbox-one"];
-  const ltLabel = config.controllerType === "xbox-one" ? "LT" : "L2";
-  const rtLabel = config.controllerType === "xbox-one" ? "RT" : "R2";
+  const baseLayout = LAYOUTS[config.controllerType] ?? LAYOUTS["c4d1"];
+  const ltLabel = config.controllerType === "c4d1" ? "LT" : "L2";
+  const rtLabel = config.controllerType === "c4d1" ? "RT" : "R2";
   const lStickBase = baseLayout.sticks[0];
   const lStickEff = { ...lStickBase, ...(overrides.sticks[0] ?? {}) };
   const stickSizePx = Math.round(config.width * lStickEff.size / 100);
@@ -235,10 +274,39 @@ export function Studio() {
       mkbShowShadow, mkbShadowIntensity, mkbShadowAngle,
       mkbWidth, mkbHeight]);
 
+  // One-time restore on mount — resumes the most recently saved preset's
+  // overrides/settings, same as the old synchronous localStorage read used
+  // to, just async now that preset storage lives on disk (Electron IPC).
   useEffect(() => {
-    const presets = loadCtrlPresets(config.controllerType);
-    setCtrlPresets(presets);
+    let cancelled = false;
+    (async () => {
+      const initialType = configRef.current.controllerType;
+      const [ctrlP, mkbP] = await Promise.all([loadCtrlPresets(initialType), loadMkbPresets()]);
+      if (cancelled) return;
+      setOverrides(ctrlP[0]?.overrides ?? DEFAULT_OVERRIDES);
+      setMkbPresets(mkbP);
+      setKeyOverrides(mkbP[0]?.keyOverrides ?? {});
+      setMouseOverrides(mkbP[0]?.mouseOverrides ?? []);
+
+      // One-time legacy-localStorage-to-disk migration, for every controller
+      // type, not just the one active at launch. loadCtrlPresets() already
+      // migrates a type's old localStorage presets to disk the first time
+      // it's called for that type (see LibraryPicker.tsx's loadPresets) — but
+      // until now that only ever happened for whichever type the user had
+      // open, silently leaving every other type's old presets stranded.
+      // Calling it once for every type here (result unused — this run is
+      // purely to trigger that migration) guarantees nothing gets missed.
+      CONTROLLER_TYPES.forEach(ct => { if (ct.id !== initialType) loadCtrlPresets(ct.id); });
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCtrlPresets(config.controllerType).then(presets => { if (!cancelled) setCtrlPresets(presets); });
     setShowPresets(false); setShowSaveInput(false);
+    return () => { cancelled = true; };
   }, [config.controllerType]);
 
   useEffect(() => {
@@ -265,8 +333,7 @@ export function Studio() {
         return rest;
       });
     }
-    const presets = loadCtrlPresets(ctId);
-    setOverrides(presets[0]?.overrides ?? DEFAULT_OVERRIDES);
+    loadCtrlPresets(ctId).then(presets => setOverrides(presets[0]?.overrides ?? DEFAULT_OVERRIDES));
     setEditMode(false);
     setMkbMode(false);
   }
@@ -341,17 +408,32 @@ export function Studio() {
     return () => window.removeEventListener("bezel-video-loop", handler);
   }, []);
 
-  // Save — controller or MKB depending on current mode
-  function handleSave() {
+  // Save — controller or MKB depending on current mode. No cap on preset
+  // count — the only real ceiling is actual disk space (presets are written
+  // as real files under the Electron app's userData folder), and
+  // saveCtrlPresets/saveMkbPresets surface a message instead of failing
+  // silently if that's ever somehow exhausted.
+  async function handleSave() {
     const name = saveInput.trim();
     if (mkbMode) {
       const n = name || `MKB Preset ${mkbPresets.length + 1}`;
-      const updated = [{ name: n, keyOverrides, mouseOverrides, savedAt: Date.now() }, ...mkbPresets].slice(0, MAX_PRESETS);
-      setMkbPresets(updated); saveMkbPresets(updated);
+      const updated = [{
+        name: n, keyOverrides, mouseOverrides,
+        kbSkinVideoFit, kbSkinContrast, kbSkinSaturate,
+        mouseSkinVideoFit, mouseSkinContrast, mouseSkinSaturate,
+        mkbColor, mkbRgbStyle, mkbRainbow, mouseColor,
+        keyPressColor, keyPressOpacity, keyPressGlow,
+        kbOpacity, kbGlow, mouseOpacity, mouseGlow, mouseInnerFade, mouseOuterFade,
+        mouseRgbEnabled, mouseRgbMode, mouseRgbSpeed, mouseRgbIntensity, mouseRgbColor, mouseRgbRainbow,
+        mkbShowShadow, mkbShadowIntensity, mkbShadowAngle,
+        mkbWidth, mkbHeight,
+        savedAt: Date.now(),
+      }, ...mkbPresets];
+      setMkbPresets(updated); await saveMkbPresets(updated);
     } else {
       const n = name || `Preset ${ctrlPresets.length + 1}`;
-      const updated = [{ name: n, overrides, savedAt: Date.now() }, ...ctrlPresets].slice(0, MAX_PRESETS);
-      setCtrlPresets(updated); saveCtrlPresets(config.controllerType, updated);
+      const updated = [{ name: n, config, overrides, savedAt: Date.now() }, ...ctrlPresets];
+      setCtrlPresets(updated); await saveCtrlPresets(config.controllerType, updated);
     }
     setSaveInput(""); setShowSaveInput(false); setShowPresets(true);
   }
@@ -384,8 +466,8 @@ export function Studio() {
         } catch { return ""; }
       };
 
-      const [kbB64, keysB64, mouseB64, maskB64] = await Promise.all([
-        toB64(kbSkinUrl), toB64(kbButtonsUrl), toB64(mouseSkinUrl), toB64("mkb/rgb-mask.png"),
+      const [kbB64, keysB64, mouseB64, maskB64, mouseMaskB64, kbBlackB64] = await Promise.all([
+        toB64(kbSkinUrl), toB64(kbButtonsUrl), toB64(mouseSkinUrl), toB64("mkb/keyboard-mask.png"), toB64("mkb/mouse-mask.png"), toB64("mkb/keyboard-black.png"),
       ]);
 
       // Build effective key positions (with overrides)
@@ -454,7 +536,7 @@ export function Studio() {
       const keysIsVideo = isVid(keysB64);
       const mouseIsVideo = isVid(mouseB64);
       const kbSkinTag = kbB64
-        ? `<div style="position:absolute;inset:0;width:100%;height:100%;z-index:1;${kbSkinFilter ? `filter:${kbSkinFilter}` : ""}">${
+        ? `<div style="position:absolute;inset:0;width:100%;height:100%;z-index:2;${kbSkinFilter ? `filter:${kbSkinFilter}` : ""}">${
             kbIsVideo
               ? `<video src="${kbB64}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:${kbSkinVideoFit};background:transparent"></video>`
               : `<img src="${kbB64}" style="width:100%;height:100%;object-fit:cover">`
@@ -489,15 +571,21 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
 .mouse-wrap canvas#mouseRgbCv{position:absolute;inset:0;width:100%;height:100%;display:block}
 .mmask{position:absolute;object-fit:contain;opacity:0;transition:opacity 0.06s;pointer-events:none}
 #wsStatus{position:fixed;top:4px;left:4px;background:#000;color:#0f0;font-family:monospace;font-size:8px;padding:2px 5px;border-radius:3px;border:1px solid #0f0;z-index:9999;opacity:0.35}
+.led{position:absolute;transform:translate(-50%,-50%);width:4.0%;height:7.0%;border-radius:50%;background:#0a0000;pointer-events:none;z-index:1;transition:background 0.08s}
+@keyframes ledRgbCycle{0%{filter:hue-rotate(0deg) saturate(1.4)}100%{filter:hue-rotate(360deg) saturate(1.4)}}
 </style>
 </head>
 <body>
 <div id="wsStatus">WS: connecting...</div>
 <div class="kb" style="filter:${mkbShadowFilter}">
+  <img src="${kbBlackB64}" style="z-index:0;object-fit:cover" />
+  <canvas id="rgbcv" style="z-index:0"></canvas>
   ${kbSkinTag}
-  <canvas id="rgbcv" style="z-index:2"></canvas>
   ${keysTag}
   <canvas id="keyglow" style="z-index:4"></canvas>
+  <div class="led" id="led6" style="left:72.8%;top:22.74%"></div>
+  <div class="led" id="led7" style="left:77.6%;top:22.68%"></div>
+  <div class="led" id="led8" style="left:82.3%;top:22.77%"></div>
 </div>
 <div class="mouse-wrap" id="mousewrap" style="filter:${mkbShadowFilter}">
   ${mouseIsVideo ? "" : `<canvas id="mouseRgbCv"></canvas>`}
@@ -549,7 +637,32 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
   var cv = document.getElementById('rgbcv');
   cv.width = KB_W; cv.height = KB_H;
   var ctx = cv.getContext('2d');
-  cv.style.opacity = KB_OPACITY;
+
+  // ── Style-select LED indicators (Digit6/7/8) — mirrors MkbView.tsx exactly:
+  //    press a fresh key -> solid on that key's style; press the SAME key
+  //    again -> rainbow; press it a third time -> off (RGB hidden entirely).
+  var LED_ACTIVE_CODE = null, LED_ACTIVE_MODE = 0; // 0=off,1=solid,2=rainbow
+  var KB_VISIBLE = true;
+  var LED_STYLE_MAP = {Digit6:1,Digit7:2,Digit8:3};
+  var LED_ELS = {Digit6:document.getElementById('led6'),Digit7:document.getElementById('led7'),Digit8:document.getElementById('led8')};
+  function updateLeds(){
+    cv.style.opacity = KB_VISIBLE ? KB_OPACITY : 0;
+    for(var code in LED_ELS){
+      var el = LED_ELS[code];
+      if(!el) continue;
+      if(code === LED_ACTIVE_CODE && LED_ACTIVE_MODE === 2){
+        el.style.background = 'radial-gradient(circle, #ff8080 0%, #ff0000 70%)';
+        el.style.animation = 'ledRgbCycle 2s linear infinite';
+      } else if(code === LED_ACTIVE_CODE && LED_ACTIVE_MODE === 1){
+        el.style.background = 'radial-gradient(circle, #ff6060 0%, #cc0000 70%)';
+        el.style.animation = 'none';
+      } else {
+        el.style.background = '#0a0000';
+        el.style.animation = 'none';
+      }
+    }
+  }
+  updateLeds();
 
   var maskImg = new Image();
   maskImg.src = "${maskB64}";
@@ -572,9 +685,30 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
   function handleKeyDown(code){
     if(pressedKeys[code]) return;
     pressedKeys[code] = true;
-    if(code==='Digit6') STYLE=1;
-    if(code==='Digit7') STYLE=2;
-    if(code==='Digit8') STYLE=3;
+    if(LED_STYLE_MAP[code]){
+      if(LED_ACTIVE_CODE !== code){
+        // Different key (or none active) — switch to solid on this key
+        LED_ACTIVE_CODE = code;
+        LED_ACTIVE_MODE = 1;
+        RAINBOW = false;
+        STYLE = LED_STYLE_MAP[code];
+        KB_VISIBLE = true;
+      } else {
+        var nextMode = (LED_ACTIVE_MODE % 3) + 1;
+        if(nextMode === 2){
+          // Rainbow — LED pulses red, RGB output unchanged
+          LED_ACTIVE_MODE = 2;
+          RAINBOW = true;
+        } else {
+          // Off (wraps past 3) — RGB hidden entirely
+          LED_ACTIVE_CODE = null;
+          LED_ACTIVE_MODE = 0;
+          RAINBOW = false;
+          KB_VISIBLE = false;
+        }
+      }
+      updateLeds();
+    }
     var k = KEYS.find(function(k){ return k.code===code; });
     if(k) ripples.push({cx:k.cx/100*KB_W, cy:k.cy/100*KB_H, t:t});
   }
@@ -675,7 +809,7 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
       if(!mrCanvas || !mrWrap) return;
       var mrCtx = mrCanvas.getContext('2d');
       var mrMaskImg = new Image();
-      mrMaskImg.src = "${mouseB64}";
+      mrMaskImg.src = "${mouseMaskB64}";
       var mrT = 0;
       var mrSS = 1 / Math.max(MOUSE_RGB_SPEED, 0.5);
       var mrStarted = false;
@@ -704,6 +838,13 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
         var w = mrCanvas.width, h = mrCanvas.height;
         if(w > 0 && h > 0){
           mrCtx.clearRect(0,0,w,h);
+          // Solid black first, painted over by the color fill below (source-over,
+          // the canvas default) — wherever the color's alpha dips below 1, black
+          // shows through instead of transparency. The final destination-in mask
+          // clip then applies to the black+color result together, same as the
+          // controller body / keyboard RGB backdrop treatment.
+          mrCtx.fillStyle = '#000';
+          mrCtx.fillRect(0,0,w,h);
           if(MOUSE_RGB_MODE === 'breathing'){
             var raw = 0.5 + 0.5*Math.sin(mrT*2.5);
             var pulse = 0.3 + 0.7*raw;
@@ -900,16 +1041,37 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
               {(presets as any[]).map((p, i) => (
                 <div key={i} className="flex items-center px-2 py-1.5 hover:bg-muted/40 group">
                   <button onClick={() => {
-                    if (mkbMode) { setKeyOverrides((p as MkbPreset).keyOverrides); setMouseOverrides((p as MkbPreset).mouseOverrides ?? []); }
-                    else setOverrides((p as CtrlPreset).overrides);
+                    if (mkbMode) {
+                      // Merge over defaults first — presets saved before appearance
+                      // fields were added only have keyOverrides/mouseOverrides.
+                      const mp = { ...DEFAULT_MKB_SETTINGS, ...(p as MkbPreset) };
+                      setKeyOverrides(mp.keyOverrides); setMouseOverrides(mp.mouseOverrides ?? []);
+                      setKbSkinVideoFit(mp.kbSkinVideoFit); setKbSkinContrast(mp.kbSkinContrast); setKbSkinSaturate(mp.kbSkinSaturate);
+                      setMouseSkinVideoFit(mp.mouseSkinVideoFit); setMouseSkinContrast(mp.mouseSkinContrast); setMouseSkinSaturate(mp.mouseSkinSaturate);
+                      setMkbColor(mp.mkbColor); setMkbRgbStyle(mp.mkbRgbStyle); setMkbRainbow(mp.mkbRainbow); setMouseColor(mp.mouseColor);
+                      setKeyPressColor(mp.keyPressColor); setKeyPressOpacity(mp.keyPressOpacity); setKeyPressGlow(mp.keyPressGlow);
+                      setKbOpacity(mp.kbOpacity); setKbGlow(mp.kbGlow);
+                      setMouseOpacity(mp.mouseOpacity); setMouseGlow(mp.mouseGlow); setMouseInnerFade(mp.mouseInnerFade); setMouseOuterFade(mp.mouseOuterFade);
+                      setMouseRgbEnabled(mp.mouseRgbEnabled); setMouseRgbMode(mp.mouseRgbMode); setMouseRgbSpeed(mp.mouseRgbSpeed);
+                      setMouseRgbIntensity(mp.mouseRgbIntensity); setMouseRgbColor(mp.mouseRgbColor); setMouseRgbRainbow(mp.mouseRgbRainbow);
+                      setMkbShowShadow(mp.mkbShowShadow); setMkbShadowIntensity(mp.mkbShadowIntensity); setMkbShadowAngle(mp.mkbShadowAngle);
+                      setMkbWidth(mp.mkbWidth); setMkbHeight(mp.mkbHeight);
+                    } else {
+                      const cp = p as CtrlPreset;
+                      setOverrides(cp.overrides);
+                      // Older presets (saved before this field existed) have no
+                      // config snapshot — leave the current config alone rather
+                      // than wiping it out with undefined.
+                      if (cp.config) setConfig({ ...DEFAULT_CONFIG, ...cp.config, controllerType: config.controllerType });
+                    }
                     setShowPresets(false);
                   }} className="flex-1 text-left text-xs text-foreground truncate">
                     {p.name} <span className="text-[10px] text-muted-foreground">{new Date(p.savedAt).toLocaleDateString()}</span>
                   </button>
-                  <button onClick={() => {
+                  <button onClick={async () => {
                     const u = presets.filter((_, j) => j !== i);
-                    if (mkbMode) { setMkbPresets(u as MkbPreset[]); saveMkbPresets(u as MkbPreset[]); }
-                    else { setCtrlPresets(u as CtrlPreset[]); saveCtrlPresets(config.controllerType, u as CtrlPreset[]); }
+                    if (mkbMode) { setMkbPresets(u as MkbPreset[]); await saveMkbPresets(u as MkbPreset[]); }
+                    else { setCtrlPresets(u as CtrlPreset[]); await saveCtrlPresets(config.controllerType, u as CtrlPreset[]); }
                   }} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive p-0.5 rounded">
                     <Trash2 size={10} />
                   </button>
@@ -961,7 +1123,8 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
                 mouseSkinVideoFit={mouseSkinVideoFit} onMouseVideoFit={setMouseSkinVideoFit}
                 mouseSkinContrast={mouseSkinContrast} onMouseContrast={setMouseSkinContrast}
                 mouseSkinSaturate={mouseSkinSaturate} onMouseSaturate={setMouseSkinSaturate} />
-            : <SkinPanel config={config} onChange={handleChange} stickSizePx={stickSizePx} bodySizeLabel={bodySizeLabel} />
+            : <SkinPanel config={config} onChange={handleChange} stickSizePx={stickSizePx} bodySizeLabel={bodySizeLabel}
+                onClearSlot={slot => handleClearSlot(slot, config.controllerType)} />
           }
         </aside>
 
@@ -971,7 +1134,7 @@ body{display:flex;align-items:center;justify-content:center;gap:24px}
             {mkbMode ? (
               <div className="flex items-center justify-center w-full flex-1 min-h-0 rounded-xl"
                 style={{ backgroundImage:"url(editor-checker-tile.png)", backgroundSize:"136px 54px", backgroundRepeat:"repeat", backgroundColor:"#1a1a22" }}>
-              <div className="inline-flex rounded-xl overflow-hidden">
+              <div className="inline-flex">
                 <MkbView
                   color={mkbColor}
                   keyPressColor={keyPressColor}
@@ -1385,6 +1548,14 @@ function MkbConfigPanel({ color, onColorChange, keyPressColor, onKeyPressColorCh
   kbSkinUrl, kbButtonsUrl, mouseSkinUrl, mkbWidth, mkbHeight, onMkbSizeChange, onExport, exporting }: MkbConfigProps) {
   const styleLabels: Record<RgbStyle,string> = {1:"Breathe",2:"Wave",3:"Ripple"};
 
+  // Raw <input type="color"> elements below need the same drag-lag fix as
+  // ConfigPanel's ColorField — every native color-drag tick was calling
+  // these onChange props directly, cascading into a full Studio re-render.
+  const [colorLocal, handleColorChange] = useThrottledColor(color, onColorChange);
+  const [keyPressColorLocal, handleKeyPressColorChange] = useThrottledColor(keyPressColor, onKeyPressColorChange);
+  const [mouseColorLocal, handleMouseColorChange] = useThrottledColor(mouseColor, onMouseColorChange);
+  const [mouseRgbColorLocal, handleMouseRgbColorChange] = useThrottledColor(mouseRgbColor, onMouseRgbColor);
+
   // Export handled by parent via prop
 
 
@@ -1408,9 +1579,9 @@ function MkbConfigPanel({ color, onColorChange, keyPressColor, onKeyPressColorCh
             🌈 Rainbow {rainbow ? "(on)" : "(off)"}
           </button>
           <div className="flex items-center gap-2">
-            <input type="color" value={color} onChange={e => onColorChange(e.target.value)}
+            <input type="color" value={colorLocal} onChange={e => handleColorChange(e.target.value)}
               className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5" />
-            <span className="text-xs font-mono text-foreground/50">{color}</span>
+            <span className="text-xs font-mono text-foreground/50">{colorLocal}</span>
             <span className="text-xs text-foreground/40">RGB Color</span>
           </div>
           <MkbSlider label="Glow Strength" value={kbOpacity} min={0.05} max={1} step={0.05}
@@ -1421,9 +1592,9 @@ function MkbConfigPanel({ color, onColorChange, keyPressColor, onKeyPressColorCh
       {/* Keyboard appearance */}
       <MkbDropdown title="⌨️ Keyboard">
         <div className="flex items-center gap-2">
-          <input type="color" value={keyPressColor} onChange={e => onKeyPressColorChange(e.target.value)}
+          <input type="color" value={keyPressColorLocal} onChange={e => handleKeyPressColorChange(e.target.value)}
             className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5" />
-          <span className="text-xs font-mono text-foreground/50">{keyPressColor}</span>
+          <span className="text-xs font-mono text-foreground/50">{keyPressColorLocal}</span>
           <span className="text-xs text-foreground/40">Key Press</span>
         </div>
         <MkbSlider label="Opacity" value={keyPressOpacity} min={0.05} max={1} step={0.05}
@@ -1435,9 +1606,9 @@ function MkbConfigPanel({ color, onColorChange, keyPressColor, onKeyPressColorCh
       {/* Mouse */}
       <MkbDropdown title="🖱️ Mouse">
         <div className="flex items-center gap-2">
-          <input type="color" value={mouseColor} onChange={e => onMouseColorChange(e.target.value)}
+          <input type="color" value={mouseColorLocal} onChange={e => handleMouseColorChange(e.target.value)}
             className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5" />
-          <span className="text-xs font-mono text-foreground/50">{mouseColor}</span>
+          <span className="text-xs font-mono text-foreground/50">{mouseColorLocal}</span>
         </div>
         <MkbSlider label="Opacity" value={mouseOpacity} min={0.05} max={1} step={0.05}
           display={Math.round(mouseOpacity*100)+"%"} onChange={onMouseOpacity} />
@@ -1466,9 +1637,9 @@ function MkbConfigPanel({ color, onColorChange, keyPressColor, onKeyPressColorCh
             <MkbToggle label="Rainbow" value={mouseRgbRainbow} onChange={onMouseRgbRainbow} />
             {!mouseRgbRainbow && (
               <div className="flex items-center gap-2">
-                <input type="color" value={mouseRgbColor} onChange={e=>onMouseRgbColor(e.target.value)}
+                <input type="color" value={mouseRgbColorLocal} onChange={e=>handleMouseRgbColorChange(e.target.value)}
                   className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5" />
-                <span className="text-xs font-mono text-foreground/50">{mouseRgbColor}</span>
+                <span className="text-xs font-mono text-foreground/50">{mouseRgbColorLocal}</span>
               </div>
             )}
           </>

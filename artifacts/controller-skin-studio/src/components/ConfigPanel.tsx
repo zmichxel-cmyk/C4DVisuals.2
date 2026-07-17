@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { Settings, Download, Zap, Palette, Tag, Loader2, Sparkles, ChevronDown } from "lucide-react";
 import { ControllerConfig, LayoutOverrides } from "../types/config";
 import { LAYOUTS } from "../lib/layouts";
 import { generateExportHtml } from "../lib/exportHtml";
+import { useThrottledColor } from "../hooks/useThrottledColor";
 
 interface Props {
   config: ControllerConfig;
@@ -52,30 +53,7 @@ function Section({ icon: Icon, title }: { icon: React.ComponentType<{ size?: num
 }
 
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  // Native color inputs fire onChange continuously while dragging — often
-  // faster than the app can afford to re-render (every call cascades into
-  // setConfig, which re-renders the whole Studio tree). Local state keeps the
-  // swatch/hex label instantly responsive, while the upstream onChange (the
-  // expensive one) is coalesced to at most once per animation frame instead
-  // of once per native event.
-  const [local, setLocal] = useState(value);
-  const latestRef = useRef(value);
-  const rafRef = useRef<number | null>(null);
-
-  useEffect(() => { setLocal(value); latestRef.current = value; }, [value]);
-  useEffect(() => () => { if (rafRef.current != null) cancelAnimationFrame(rafRef.current); }, []);
-
-  function handleInput(v: string) {
-    setLocal(v);
-    latestRef.current = v;
-    if (rafRef.current == null) {
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null;
-        onChange(latestRef.current);
-      });
-    }
-  }
-
+  const [local, handleInput] = useThrottledColor(value, onChange);
   return (
     <div className="flex items-center justify-between gap-1.5">
       <span className="text-xs text-muted-foreground leading-tight truncate">{label}</span>
@@ -112,10 +90,21 @@ function Dropdown({ title, icon: Icon, children }: { title: string; icon: React.
 export function ConfigPanel({ config, overrides, onChange, onResetOverrides, showButtonLabels, onToggleLabels }: Props) {
   const [exporting, setExporting] = useState(false);
   const [activeTab, setActiveTab] = useState<"appearance" | "effects">("appearance");
-  const layout = LAYOUTS[config.controllerType] ?? LAYOUTS["xbox-one"];
+  const layout = LAYOUTS[config.controllerType] ?? LAYOUTS["c4d1"];
   const lStickBase = layout.sticks[0];
   const lStickEff = { ...lStickBase, ...(overrides.sticks[0] ?? {}) };
   const stickSizePx = Math.round(config.width * lStickEff.size / 100);
+
+  // Raw <input type="color"> elements below (not the shared ColorField
+  // component) still need the same throttling — called unconditionally here
+  // regardless of which linked/unlinked or enabled/disabled branch is
+  // actually visible, since hooks can't be called conditionally inside JSX.
+  const [linkedStickLocal, handleLinkedStickChange] = useThrottledColor(config.leftStickColor, v => onChange({ leftStickColor: v, rightStickColor: v }));
+  const [leftStickLocal, handleLeftStickChange] = useThrottledColor(config.leftStickColor, v => onChange({ leftStickColor: v }));
+  const [rightStickLocal, handleRightStickChange] = useThrottledColor(config.rightStickColor, v => onChange({ rightStickColor: v }));
+  const [highlightLocal, handleHighlightChange] = useThrottledColor(config.stickHighlightColor ?? "#ffffff", v => onChange({ stickHighlightColor: v }));
+  const [buttonColorLocal, handleButtonColorChange] = useThrottledColor(config.buttonColor, v => onChange({ buttonColor: v }));
+  const [strokeColorLocal, handleStrokeColorChange] = useThrottledColor(config.strokeColor, v => onChange({ strokeColor: v }));
 
   async function handleExport() {
     setExporting(true);
@@ -169,29 +158,29 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
             </div>
             {config.linkStickColors ? (
               <div className="flex items-center gap-2">
-                <input type="color" value={config.leftStickColor} onChange={e => onChange({ leftStickColor: e.target.value, rightStickColor: e.target.value })}
+                <input type="color" value={linkedStickLocal} onChange={e => handleLinkedStickChange(e.target.value)}
                   className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
                 <div>
                   <p className="text-xs font-medium text-foreground">Both Sticks</p>
-                  <p className="text-[10px] font-mono text-muted-foreground">{config.leftStickColor}</p>
+                  <p className="text-[10px] font-mono text-muted-foreground">{linkedStickLocal}</p>
                 </div>
               </div>
             ) : (
               <>
                 <div className="flex items-center gap-2">
-                  <input type="color" value={config.leftStickColor} onChange={e => onChange({ leftStickColor: e.target.value })}
+                  <input type="color" value={leftStickLocal} onChange={e => handleLeftStickChange(e.target.value)}
                     className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
                   <div>
                     <p className="text-xs font-medium text-foreground">Left Stick</p>
-                    <p className="text-[10px] font-mono text-muted-foreground">{config.leftStickColor}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground">{leftStickLocal}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input type="color" value={config.rightStickColor} onChange={e => onChange({ rightStickColor: e.target.value })}
+                  <input type="color" value={rightStickLocal} onChange={e => handleRightStickChange(e.target.value)}
                     className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
                   <div>
                     <p className="text-xs font-medium text-foreground">Right Stick</p>
-                    <p className="text-[10px] font-mono text-muted-foreground">{config.rightStickColor}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground">{rightStickLocal}</p>
                   </div>
                 </div>
               </>
@@ -213,12 +202,12 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
                   display={`${Math.round((config.stickHighlightIntensity ?? 0.35) * 100)}%`}
                   onChange={v => onChange({ stickHighlightIntensity: v })} />
                 <div className="flex items-center gap-2">
-                  <input type="color" value={config.stickHighlightColor ?? "#ffffff"}
-                    onChange={e => onChange({ stickHighlightColor: e.target.value })}
+                  <input type="color" value={highlightLocal}
+                    onChange={e => handleHighlightChange(e.target.value)}
                     className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
                   <div>
                     <p className="text-xs font-medium text-foreground">Highlight Color</p>
-                    <p className="text-[10px] font-mono text-muted-foreground">{config.stickHighlightColor ?? "#ffffff"}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground">{highlightLocal}</p>
                   </div>
                 </div>
               </>
@@ -242,11 +231,11 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
           {/* Button Press dropdown */}
           <Dropdown title="Button Press" icon={Zap}>
             <div className="flex items-center gap-2">
-              <input type="color" value={config.buttonColor} onChange={e => onChange({ buttonColor: e.target.value })}
+              <input type="color" value={buttonColorLocal} onChange={e => handleButtonColorChange(e.target.value)}
                 className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
               <div>
                 <p className="text-xs font-medium text-foreground">Button Press Color</p>
-                <p className="text-[10px] font-mono text-muted-foreground">{config.buttonColor}</p>
+                <p className="text-[10px] font-mono text-muted-foreground">{buttonColorLocal}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-x-3">
@@ -270,11 +259,11 @@ export function ConfigPanel({ config, overrides, onChange, onResetOverrides, sho
                 <Slider label="Stroke Width" value={config.strokeWidth} min={1} max={8} step={0.5}
                   display={`${config.strokeWidth}px`} onChange={v => onChange({ strokeWidth: v })} />
                 <div className="flex items-center gap-2">
-                  <input type="color" value={config.strokeColor} onChange={e => onChange({ strokeColor: e.target.value })}
+                  <input type="color" value={strokeColorLocal} onChange={e => handleStrokeColorChange(e.target.value)}
                     className="w-8 h-8 rounded cursor-pointer border border-border bg-card p-0.5 flex-none" />
                   <div>
                     <p className="text-xs font-medium text-foreground">Stroke Color</p>
-                    <p className="text-[10px] font-mono text-muted-foreground">{config.strokeColor}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground">{strokeColorLocal}</p>
                   </div>
                 </div>
               </>

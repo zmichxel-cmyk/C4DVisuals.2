@@ -47,8 +47,8 @@ export function useGamepad() {
     // Standard mapping:
     // axes 0/1 = left stick X/Y
     // axes 2/3 = right stick X/Y
-    // axes 4/5 = LT/RT on PS controllers (range -1 to 1, rest at -1)
-    // buttons 6/7 = LT/RT analog value on Xbox/standard mapping
+    // axes 4/5 = LT/RT on some controllers (range -1 to 1, rest at -1)
+    // buttons 6/7 = LT/RT analog value on the standard gamepad mapping
     // Never read axes 2/3 as triggers — that's the right stick!
     const ltFromAxis  = gp.axes[4] !== undefined ? applyDeadzone((gp.axes[4] + 1) / 2) : 0;
     const rtFromAxis  = gp.axes[5] !== undefined ? applyDeadzone((gp.axes[5] + 1) / 2) : 0;

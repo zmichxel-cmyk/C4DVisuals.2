@@ -64,11 +64,11 @@ export interface ControllerConfig {
 }
 
 export const DEFAULT_CONFIG: ControllerConfig = {
-  controllerType: "xbox-one",
+  controllerType: "c4d1",
   overlayName: "My Controller",
-  controllerSkin: "skins/xbox-one-base.png",
-  leftStickSkin: "sticks/xbox-left.png",
-  rightStickSkin: "sticks/xbox-right.png",
+  controllerSkin: "skins/c4d1-base.png",
+  leftStickSkin: "sticks/c4d1-left.png",
+  rightStickSkin: "sticks/c4d1-right.png",
   controllerSkinLoop: true,
   controllerSkinVideoFit: "contain",
   controllerSkinContrast: 1,

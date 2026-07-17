@@ -1,17 +1,40 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RgbBodyCanvas } from "./RgbBodyCanvas";
+import { loadPresets, savePresets } from "./LibraryPicker";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Preset helpers — exported so Studio can use them
 // ─────────────────────────────────────────────────────────────────────────────
+// Full snapshot of an MKB preset — key/mouse mask overrides PLUS the full
+// appearance settings (mirrors Studio.tsx's MkbSettings, minus skin URLs,
+// which are excluded there too since they can be several MB and are always
+// reset to the built-in default paths on load). Presets used to only carry
+// keyOverrides/mouseOverrides, so loading one silently dropped every color,
+// glow, RGB, and shadow setting.
 export interface MkbPreset {
   name: string;
   keyOverrides: Record<string,{cx:number;cy:number;w:number;h:number}>;
   mouseOverrides: {id:string;cx:number;cy:number;w:number;h:number}[];
+  kbSkinVideoFit?: "contain" | "cover";
+  kbSkinContrast?: number; kbSkinSaturate?: number;
+  mouseSkinVideoFit?: "contain" | "cover";
+  mouseSkinContrast?: number; mouseSkinSaturate?: number;
+  mkbColor?: string; mkbRgbStyle?: 1|2|3; mkbRainbow?: boolean; mouseColor?: string;
+  keyPressColor?: string; keyPressOpacity?: number; keyPressGlow?: number;
+  kbOpacity?: number; kbGlow?: number;
+  mouseOpacity?: number; mouseGlow?: number; mouseInnerFade?: boolean; mouseOuterFade?: boolean;
+  mouseRgbEnabled?: boolean; mouseRgbMode?: "wave"|"breathing"; mouseRgbSpeed?: number;
+  mouseRgbIntensity?: number; mouseRgbColor?: string; mouseRgbRainbow?: boolean;
+  mkbShowShadow?: boolean; mkbShadowIntensity?: number; mkbShadowAngle?: number;
+  mkbWidth?: number; mkbHeight?: number;
   savedAt: number;
 }
-export function loadMkbPresets(): MkbPreset[] { try { return JSON.parse(localStorage.getItem('css-mkb-presets') ?? '[]'); } catch { return []; } }
-export function saveMkbPresets(p: MkbPreset[]) { localStorage.setItem('css-mkb-presets', JSON.stringify(p)); }
+const MKB_PRESETS_LEGACY_KEY = 'css-mkb-presets';
+export function loadMkbPresets(): Promise<MkbPreset[]> { return loadPresets<MkbPreset>('mkb', MKB_PRESETS_LEGACY_KEY); }
+export async function saveMkbPresets(p: MkbPreset[]): Promise<void> {
+  const ok = await savePresets('mkb', MKB_PRESETS_LEGACY_KEY, p);
+  if (!ok) window.alert("Couldn't save preset — you're out of storage space. Try deleting an old preset and saving again.");
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Key definitions — labels and default positions as % of 1344×799 image
@@ -21,36 +44,46 @@ export interface KeyDef {
   cx: number; cy: number; w: number; h: number;
 }
 
+// Press-highlight size is intentionally uniform across two groups of keys
+// (position/cx,cy is untouched — only w/h, which drives the press glow
+// size). Each group's w/h is the average of what was there before, since
+// the per-key values were all close but not quite equal (manual tracing
+// imprecision), and picking one key's exact number over another's would be
+// arbitrary. Digit6/7/8 (S1/S2/S3, the RGB-style-select keys) are a
+// deliberately smaller distinct control, not part of the "numbers" group.
+//   Group A — Tab / Caps / Ctrl / Alt: w:11.92 h:13.94
+//   Group B — Esc / Digit1-5 / all letters: w:8.00 h:14.04
+// ShiftLeft and Space were left as-is per instruction.
 export const BASE_KEYS: KeyDef[] = [
-  { code:"Escape",      label:"ESC",   cx:18.97, cy:23.90, w:8.33,  h:13.28 },
-  { code:"Digit1",      label:"1",     cx:27.49, cy:23.09, w:8.07,  h:14.00 },
-  { code:"Digit2",      label:"2",     cx:36.16, cy:23.03, w:8.04,  h:13.90 },
-  { code:"Digit3",      label:"3",     cx:44.64, cy:23.09, w:8.04,  h:14.00 },
-  { code:"Digit4",      label:"4",     cx:53.50, cy:23.09, w:8.07,  h:14.00 },
-  { code:"Digit5",      label:"5",     cx:61.94, cy:23.22, w:8.04,  h:14.30 },
+  { code:"Escape",      label:"ESC",   cx:18.97, cy:23.90, w:8.00,  h:14.04 },
+  { code:"Digit1",      label:"1",     cx:27.49, cy:23.09, w:8.00,  h:14.04 },
+  { code:"Digit2",      label:"2",     cx:36.16, cy:23.03, w:8.00,  h:14.04 },
+  { code:"Digit3",      label:"3",     cx:44.64, cy:23.09, w:8.00,  h:14.04 },
+  { code:"Digit4",      label:"4",     cx:53.50, cy:23.09, w:8.00,  h:14.04 },
+  { code:"Digit5",      label:"5",     cx:61.94, cy:23.22, w:8.00,  h:14.04 },
   { code:"Digit6",      label:"S1",    cx:71.87, cy:22.07, w:5.58,  h:8.26  },
   { code:"Digit7",      label:"S2",    cx:77.64, cy:21.87, w:5.51,  h:8.26  },
   { code:"Digit8",      label:"S3",    cx:83.47, cy:22.04, w:5.65,  h:8.26  },
-  { code:"Tab",         label:"TAB",   cx:20.65, cy:37.23, w:12.28, h:14.39 },
-  { code:"KeyQ",        label:"Q",     cx:30.69, cy:36.80, w:7.92,  h:14.10 },
-  { code:"KeyW",        label:"W",     cx:39.40, cy:36.73, w:7.81,  h:14.20 },
-  { code:"KeyE",        label:"E",     cx:48.03, cy:36.86, w:7.85,  h:14.20 },
-  { code:"KeyR",        label:"R",     cx:56.66, cy:36.73, w:7.85,  h:14.20 },
-  { code:"KeyT",        label:"T",     cx:65.07, cy:36.73, w:7.92,  h:14.20 },
-  { code:"CapsLock",    label:"CAPS",  cx:20.61, cy:51.94, w:12.35, h:13.77 },
-  { code:"KeyA",        label:"A",     cx:30.80, cy:51.94, w:8.33,  h:13.77 },
-  { code:"KeyS",        label:"S",     cx:39.40, cy:50.88, w:7.92,  h:14.00 },
-  { code:"KeyD",        label:"D",     cx:48.03, cy:50.88, w:7.92,  h:14.10 },
-  { code:"KeyF",        label:"F",     cx:56.58, cy:50.94, w:7.96,  h:14.15 },
-  { code:"KeyG",        label:"G",     cx:65.07, cy:50.88, w:7.92,  h:14.10 },
+  { code:"Tab",         label:"TAB",   cx:20.65, cy:37.23, w:11.92, h:13.94 },
+  { code:"KeyQ",        label:"Q",     cx:30.69, cy:36.80, w:8.00,  h:14.04 },
+  { code:"KeyW",        label:"W",     cx:39.40, cy:36.73, w:8.00,  h:14.04 },
+  { code:"KeyE",        label:"E",     cx:48.03, cy:36.86, w:8.00,  h:14.04 },
+  { code:"KeyR",        label:"R",     cx:56.66, cy:36.73, w:8.00,  h:14.04 },
+  { code:"KeyT",        label:"T",     cx:65.07, cy:36.73, w:8.00,  h:14.04 },
+  { code:"CapsLock",    label:"CAPS",  cx:20.61, cy:51.94, w:11.92, h:13.94 },
+  { code:"KeyA",        label:"A",     cx:30.80, cy:51.94, w:8.00,  h:14.04 },
+  { code:"KeyS",        label:"S",     cx:39.40, cy:50.88, w:8.00,  h:14.04 },
+  { code:"KeyD",        label:"D",     cx:48.03, cy:50.88, w:8.00,  h:14.04 },
+  { code:"KeyF",        label:"F",     cx:56.58, cy:50.94, w:8.00,  h:14.04 },
+  { code:"KeyG",        label:"G",     cx:65.07, cy:50.88, w:8.00,  h:14.04 },
   { code:"ShiftLeft",   label:"SHIFT", cx:23.85, cy:65.64, w:17.49, h:12.91 },
-  { code:"KeyZ",        label:"Z",     cx:37.09, cy:65.08, w:7.92,  h:14.10 },
-  { code:"KeyX",        label:"X",     cx:45.72, cy:66.08, w:8.26,  h:14.02 },
-  { code:"KeyC",        label:"C",     cx:54.28, cy:65.02, w:7.92,  h:14.05 },
-  { code:"KeyV",        label:"V",     cx:62.98, cy:65.02, w:7.92,  h:14.05 },
-  { code:"ControlLeft", label:"CTRL",  cx:20.50, cy:79.79, w:11.27, h:13.47 },
-  { code:"AltLeft",     label:"ALT",   cx:32.59, cy:80.29, w:11.76, h:14.14 },
-  { code:"Space",       label:"SPACE", cx:62.02, cy:79.72, w:49.63, h:15.52 },
+  { code:"KeyZ",        label:"Z",     cx:37.09, cy:65.08, w:8.00,  h:14.04 },
+  { code:"KeyX",        label:"X",     cx:45.72, cy:66.08, w:8.00,  h:14.04 },
+  { code:"KeyC",        label:"C",     cx:54.28, cy:65.02, w:8.00,  h:14.04 },
+  { code:"KeyV",        label:"V",     cx:62.98, cy:65.02, w:8.00,  h:14.04 },
+  { code:"ControlLeft", label:"CTRL",  cx:20.50, cy:79.79, w:11.92, h:13.94 },
+  { code:"AltLeft",     label:"ALT",   cx:32.59, cy:80.29, w:11.92, h:13.94 },
+  { code:"Space",       label:"SPACE", cx:62.02, cy:79.72, w:47.50, h:13.50 },
 ];
 
 const STYLE_CODES = ["Digit6","Digit7","Digit8"];
@@ -206,6 +239,9 @@ interface KeyMarkerProps {
   overridePos?: {cx:number;cy:number;w:number;h:number};
   isSelected: boolean;
   isPressed: boolean;
+  // CapsLock-only: toggled-on resting state — a lighter look than isPressed,
+  // shown for as long as caps is on rather than just for a momentary press.
+  isToggleActive?: boolean;
   isActiveStyle: boolean;
   color: string;
   editColor: string;
@@ -220,7 +256,7 @@ interface KeyMarkerProps {
   editMode: boolean;
 }
 
-function KeyMarker({ keyDef, overridePos, isSelected, isPressed, isActiveStyle, color, editColor,
+function KeyMarker({ keyDef, overridePos, isSelected, isPressed, isToggleActive, isActiveStyle, color, editColor,
   kbOpacity, kbGlow, keyPressOpacity, keyPressGlow,
   onSelect, onMove, onResize, containerRef, editMode }: KeyMarkerProps) {
   const dragRef = useRef<{active:boolean;isResize:boolean;startX:number;startY:number;startCx:number;startCy:number;startW:number;startH:number;cW:number;cH:number}|null>(null);
@@ -265,8 +301,18 @@ function KeyMarker({ keyDef, overridePos, isSelected, isPressed, isActiveStyle, 
   };
 
   const glowColor = color;
+  const isCapsLock = keyDef.code === "CapsLock";
+  // "Resting active" (CapsLock toggled on, not currently being struck) is
+  // deliberately shallower than a full isPressed sink on every axis — half
+  // the inset shadow depth, a lighter tint, and a much smaller nudge/squish —
+  // so a toggle that stays on indefinitely doesn't read as permanently
+  // "mashed all the way down" the way a genuine held press does.
   const boxShadow = isPressed
     ? `inset 0 3px 8px rgba(0,0,0,0.8), inset 0 1px 3px rgba(0,0,0,0.6), 0 0 ${keyPressGlow}px ${Math.round(keyPressGlow/4)}px ${glowColor}`
+    : isToggleActive
+    ? isCapsLock
+      ? `inset 0 2px 6px rgba(0,0,0,0.8), inset 0 1px 3px rgba(0,0,0,0.6), 0 0 ${Math.round(keyPressGlow/2)}px ${Math.round(keyPressGlow/6)}px ${glowColor}`
+      : `inset 0 1px 4px rgba(0,0,0,0.5), 0 0 ${Math.round(keyPressGlow/2)}px ${Math.round(keyPressGlow/6)}px ${glowColor}`
     : isSelected && editMode
     ? `0 0 0 1.5px white, 0 0 8px ${glowColor}88`
     : isActiveStyle
@@ -286,14 +332,26 @@ function KeyMarker({ keyDef, overridePos, isSelected, isPressed, isActiveStyle, 
           zIndex: isSelected?30:10,
           border: isPressed
             ? "1px solid rgba(0,0,0,0.4)"
+            : isToggleActive
+            ? "1px solid rgba(0,0,0,0.25)"
             : editMode ? (isSelected?"2px solid white":"1px solid rgba(255,255,255,0.5)") : "none",
           background: isPressed
             ? `rgba(0,0,0,${0.5 * keyPressOpacity})`
+            : isToggleActive
+            ? `rgba(0,0,0,${(isCapsLock ? 0.5 : 0.25) * keyPressOpacity})`
             : editMode
             ? `${editColor}88`
             : isActiveStyle ? `${glowColor}22` : "transparent",
           boxShadow,
-          transform: isPressed ? "translateY(3px) scale(0.97)" : "translateY(0px) scale(1)",
+          // Y-only scale (not a uniform scale()) — keeps the squish purely
+          // vertical so the press reads as sinking straight down, with no
+          // horizontal component that could make it look like it's tilting.
+          // Minimal translateY — the "pressed in" feel comes mostly from the
+          // scaleY squish + inset shadow now, not from sliding the key a
+          // visible distance down the board. isToggleActive is even lighter.
+          transform: isPressed ? "translateY(1px) scaleY(0.94)"
+            : isToggleActive ? "translateY(0px) scaleY(0.98)"
+            : "translateY(0px) scaleY(1)",
           transition: "transform 0.06s cubic-bezier(0.4,0,0.2,1), box-shadow 0.06s, background 0.06s",
           willChange:"transform,box-shadow",
         }}
@@ -449,6 +507,20 @@ function MouseView({skinUrl, color, editMode, opacity=1, glow=6, innerFade=false
         transform:`translate(${editMode?0:pos.x}px,${editMode?0:pos.y}px)`,
         transition:"transform 0.04s ease-out",willChange:"transform"}}>
 
+        {/* Black backdrop — same silhouette mask as the RGB layer below, filled
+            solid black so there's no transparency showing through behind the
+            RGB glow (mirrors the controller body / keyboard RGB backdrop). */}
+        {mouseRgbEnabled && !isVideoSkin(skinUrl) && (
+          <div className="absolute inset-0 w-full h-full pointer-events-none" style={{
+            background: "#000",
+            WebkitMaskImage: `url("${import.meta.env.BASE_URL}mkb/mouse-mask.png")`,
+            maskImage: `url("${import.meta.env.BASE_URL}mkb/mouse-mask.png")`,
+            WebkitMaskSize: "contain", maskSize: "contain",
+            WebkitMaskPosition: "center", maskPosition: "center",
+            WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat",
+          }} />
+        )}
+
         {/* RGB body layer — masked to mouse skin silhouette, sits BEHIND the skin */}
         {mouseRgbEnabled && !isVideoSkin(skinUrl) && (
           <RgbBodyCanvas
@@ -584,6 +656,13 @@ interface Props {
 
 export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseColor,kbOpacity,kbGlow,mouseOpacity,mouseGlow,mouseInnerFade,mouseOuterFade,mouseRgbEnabled=false,mouseRgbMode="wave" as "wave"|"breathing",mouseRgbSpeed=6,mouseRgbIntensity=1,mouseRgbColor="#e40707",mouseRgbRainbow=true,mkbShowShadow,mkbShadowIntensity,mkbShadowAngle,rgbStyle,onRgbStyleChange,rainbow,onRainbowChange,onRgbOff,keyboardSkinUrl,mouseSkinUrl,keyboardButtonsUrl,kbSkinVideoFit="contain",kbSkinContrast=1,kbSkinSaturate=1,mouseSkinVideoFit="contain",mouseSkinContrast=1,mouseSkinSaturate=1,editMode,keyOverrides,mouseOverrides,onKeyOverridesChange,onMouseOverridesChange,onGetMasksRef}:Props) {
   const [pressedKeys,setPressedKeys]=useState<Set<string>>(new Set());
+  // CapsLock is visually distinct from a normal key press: capsLockOn is the
+  // persistent toggle state (lit with a lighter "resting active" look for as
+  // long as caps is on), capsFlash is a brief full-depth press just for the
+  // instant the physical key is actually struck, so tapping it still feels
+  // like a press before it settles into the lighter active look.
+  const [capsLockOn,setCapsLockOn]=useState(false);
+  const [capsFlash,setCapsFlash]=useState(false);
   const [selected,setSelected]=useState<string|null>(null);
   const [ledActive,setLedActive]=useState<Map<string,1|2>>(new Map());
   const containerRef=useRef<HTMLDivElement>(null);
@@ -611,14 +690,22 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
     }));
   },[mouseOverrides]);
 
-  // Sync masks to parent whenever they change
-  const handleMasksChange=(newMasks:MouseMaskDef[])=>{
+  // Sync masks to parent whenever they change. Memoized — this used to be a
+  // plain function recreated on every render, and the mouse-mask editor's
+  // window mousemove/mouseup listeners depend on this exact reference
+  // ([onMasksChange] in its effect deps). Every drag tick called this (via
+  // setMasks), which re-rendered MkbView, which handed down a brand new
+  // function identity, which tore down and re-subscribed those window
+  // listeners dozens of times a second mid-drag — leaving a race window
+  // where a mouseup landing exactly during that gap was never seen, so the
+  // mask kept "stuck" following the cursor instead of releasing.
+  const handleMasksChange=useCallback((newMasks:MouseMaskDef[])=>{
     setMasks(newMasks);
     const overrides = newMasks.map(({id,cx,cy,w,h})=>({id,cx,cy,w,h}));
     // Update prevMouseOverrides so the sync useEffect doesn't re-fire
     prevMouseOverrides.current = JSON.stringify(overrides);
     onMouseOverridesChange(overrides);
-  };
+  },[onMouseOverridesChange]);
 
   // Track which key is currently active and its mode
   const activeLedRef = useRef<string|null>(null);
@@ -626,8 +713,38 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
 
   // Key events
   useEffect(()=>{
+    // Don't hijack keystrokes meant for an actual text field — this listens
+    // on `window` and used to preventDefault() every single key press
+    // unconditionally, which silently ate every keystroke typed into the
+    // preset-name input, the overlay-name field, or any other text input
+    // anywhere in the app for as long as the MKB tab was open.
+    const isTypingTarget = () => {
+      const el = document.activeElement as HTMLElement | null;
+      return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+    };
     const onDown=(e:KeyboardEvent)=>{
+      if(isTypingTarget()) return;
+      // Ignore OS key-repeat — otherwise holding a key down re-fires this on
+      // every repeat tick, which for Digit6/7/8 below rapid-cycles through
+      // all three LED modes in under a second instead of advancing once per
+      // actual press.
+      if(e.repeat) return;
       e.preventDefault();
+      // CapsLock is a toggle, not a momentary press — it should stay lit
+      // (with a lighter "resting active" look, not the full press depth)
+      // until pressed again, not just while physically held. getModifierState
+      // reflects the OS's actual lock state after this keydown (rather than
+      // us tracking our own on/off flag, which could drift out of sync with
+      // e.g. Caps Lock having been toggled before the app had focus). Kept
+      // entirely out of pressedKeys — capsLockOn/capsFlash drive its look
+      // instead, so it never gets the same deep, blur-exempt press style
+      // every other key uses.
+      if(e.code==="CapsLock") {
+        setCapsLockOn(e.getModifierState("CapsLock"));
+        setCapsFlash(true);
+        setTimeout(()=>setCapsFlash(false), 120);
+        return;
+      }
       setPressedKeys(p=>{const n=new Set(p);n.add(e.code);return n;});
       if(e.code==="Digit6"||e.code==="Digit7"||e.code==="Digit8") {
         const styleMap: Record<string,1|2|3> = {Digit6:1,Digit7:2,Digit8:3};
@@ -657,10 +774,22 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
         }
       }
     };
+    // CapsLock no longer touches pressedKeys at all, so onUp/onBlur need no
+    // special-casing for it any more — its own capsLockOn state already
+    // persists correctly across both keyup and a focus change untouched.
     const onUp=(e:KeyboardEvent)=>setPressedKeys(p=>{const n=new Set(p);n.delete(e.code);return n;});
+    // If the window loses focus while a key is physically held (alt-tab,
+    // clicking outside, minimizing), its keyup never fires — the key would
+    // otherwise stay lit/highlighted forever until pressed again.
+    const onBlur=()=>setPressedKeys(new Set());
     window.addEventListener("keydown",onDown);
     window.addEventListener("keyup",onUp);
-    return()=>{window.removeEventListener("keydown",onDown);window.removeEventListener("keyup",onUp);};
+    window.addEventListener("blur",onBlur);
+    return()=>{
+      window.removeEventListener("keydown",onDown);
+      window.removeEventListener("keyup",onUp);
+      window.removeEventListener("blur",onBlur);
+    };
   },[onRgbStyleChange,onRainbowChange,onRgbOff]);
 
   const keyPositions=Object.fromEntries(
@@ -675,8 +804,14 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
       <div className="flex items-center justify-center gap-6 p-4 w-full">
 
         {/* ── Keyboard ── */}
-        <div ref={containerRef} className="relative flex-shrink-0 overflow-hidden rounded-xl"
-          style={{width:"680px",aspectRatio:"1344/799",
+        {/* Outer wrapper carries the drop-shadow filter and has NO overflow
+            clipping — a filter applied on the same element as overflow:hidden
+            gets its own shadow cut off at that element's box edge, which was
+            clipping the keyboard's drop shadow into a visible rectangle. The
+            rounded-corner clipping now lives on the inner wrapper instead, so
+            the shadow can render freely outside the keyboard's own bounds. */}
+        <div ref={containerRef} className="relative flex-shrink-0"
+          style={{width:"800px",aspectRatio:"1344/799",
             filter: mkbShowShadow ? (() => {
               const rad = (mkbShadowAngle * Math.PI) / 180;
               const x = Math.round(Math.sin(rad) * 12 * mkbShadowIntensity);
@@ -686,6 +821,7 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
             })() : "none"
           }}
           onClick={e=>{if(editMode)e.stopPropagation();}}>
+        <div className="relative w-full h-full overflow-hidden rounded-xl">
 
           {/* Always-on black backdrop — clipped to keyboard shape, keeps cutouts opaque when RGB is off */}
           <img src={`${import.meta.env.BASE_URL}mkb/keyboard-black.png`}
@@ -769,7 +905,8 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
                 <KeyMarker key={key.code} keyDef={key}
                   overridePos={keyOverrides[key.code]}
                   isSelected={selected===key.code}
-                  isPressed={pressedKeys.has(key.code)}
+                  isPressed={key.code==="CapsLock" ? capsFlash : pressedKeys.has(key.code)}
+                  isToggleActive={key.code==="CapsLock" && capsLockOn}
                   isActiveStyle={isStyle&&rgbStyle===styleIdx}
                   color={keyPressColor}
                   editColor={KEY_COLORS[key.code]??"#ffffff"}
@@ -783,7 +920,8 @@ export function MkbView({color,keyPressColor,keyPressOpacity,keyPressGlow,mouseC
               );
             })}
           </div>
-        </div>
+        </div>{/* end inner clipped wrapper */}
+        </div>{/* end outer shadow wrapper */}
 
 
 

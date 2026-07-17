@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export interface LibraryEntry {
   id: string;
@@ -15,11 +15,13 @@ declare global {
       libraryLoad:   (section: string) => Promise<LibraryEntry[]>;
       libraryAdd:    (section: string, name: string, dataUrl: string) => Promise<LibraryEntry | null>;
       libraryRemove: (section: string, id: string) => Promise<void>;
+      presetsLoad:   (kind: string) => Promise<unknown[]>;
+      presetsSave:   (kind: string, presets: unknown[]) => Promise<boolean>;
     };
   }
 }
 
-/** Custom (user-baked) library entries — e.g. "body-xbox-one", "kb-body",
+/** Custom (user-baked) library entries — e.g. "body-c4d1", "kb-body",
  *  "kb-keys", "mouse". In Electron these are real files under the app's
  *  userData folder (bounded only by actual disk space — this is the
  *  intended path once packaged as a desktop app). Outside Electron (plain
@@ -55,6 +57,80 @@ export async function addToCustomLibrary(section: string, name: string, url: str
 export async function removeFromCustomLibrary(section: string, id: string): Promise<void> {
   if (window.electronAPI) { await window.electronAPI.libraryRemove(section, id); return; }
   saveToLocalStorage(section, loadFromLocalStorage(section).filter(e => e.id !== id));
+}
+
+/** Shared "Add to Library" upload flow — open file picker, read the image,
+ *  let the user rename it, then save. Used by any picker (bezels, sticks,
+ *  etc.) that wants its own "+ Add to Library" button, without each one
+ *  reimplementing file reading / naming / error handling separately. */
+export function useAddToLibrary(section: string, onAdded: (entry: LibraryEntry) => void) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [pendingDataUrl, setPendingDataUrl] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function openPicker() { inputRef.current?.click(); }
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const result = ev.target?.result;
+      if (typeof result === "string") {
+        setPendingDataUrl(result);
+        setNameDraft(file.name.replace(/\.[^.]+$/, ""));
+        setError(null);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function confirmAdd() {
+    if (!pendingDataUrl) return;
+    const name = nameDraft.trim() || "Untitled";
+    setSaving(true);
+    const saved = await addToCustomLibrary(section, name, pendingDataUrl);
+    setSaving(false);
+    if (!saved) { setError("Couldn't save — the write failed (disk full, or a permissions issue)."); return; }
+    setPendingDataUrl(null); setNameDraft("");
+    onAdded(saved);
+  }
+
+  function cancel() { setPendingDataUrl(null); setNameDraft(""); setError(null); }
+
+  return { inputRef, openPicker, handleFile, pendingDataUrl, nameDraft, setNameDraft, confirmAdd, cancel, saving, error };
+}
+
+/** Saved presets (full config snapshots — can embed multi-MB base64 skins).
+ *  In Electron these are real JSON files under userData (bounded only by
+ *  actual disk space). Outside Electron, falls back to localStorage.
+ *  `legacyStorageKey` is where this preset kind used to live back when
+ *  everything was localStorage-only — if the disk-backed store comes back
+ *  empty but that key still has data, it's migrated over once so switching
+ *  storage backends doesn't silently drop existing presets. */
+export async function loadPresets<T>(kind: string, legacyStorageKey: string): Promise<T[]> {
+  if (window.electronAPI) {
+    const onDisk = await window.electronAPI.presetsLoad(kind) as T[];
+    if (onDisk.length > 0) return onDisk;
+    try {
+      const legacy = JSON.parse(localStorage.getItem(legacyStorageKey) ?? "[]") as T[];
+      if (legacy.length > 0) { await window.electronAPI.presetsSave(kind, legacy); return legacy; }
+    } catch { /* ignore */ }
+    return [];
+  }
+  try { return JSON.parse(localStorage.getItem(legacyStorageKey) ?? "[]"); } catch { return []; }
+}
+
+/** Returns false on failure (disk full, or — outside Electron — the
+ *  localStorage quota exceeded). Callers should surface that to the user
+ *  rather than assume the save succeeded. */
+export async function savePresets<T>(kind: string, legacyStorageKey: string, presets: T[]): Promise<boolean> {
+  if (window.electronAPI) return window.electronAPI.presetsSave(kind, presets);
+  try { localStorage.setItem(legacyStorageKey, JSON.stringify(presets)); return true; }
+  catch { return false; }
 }
 
 /** Same-style picker as the thumbstick/bezel libraries, but with a single

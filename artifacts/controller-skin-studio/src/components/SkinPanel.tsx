@@ -1,14 +1,15 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Upload, X, ImageIcon, Film, Settings2 } from "lucide-react";
 import { ControllerConfig, ControllerType } from "../types/config";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
-import { LibraryPicker, LibraryEntry } from "./LibraryPicker";
+import { LibraryPicker, LibraryEntry, loadCustomLibrary, removeFromCustomLibrary, useAddToLibrary } from "./LibraryPicker";
 
 interface Props {
   config: ControllerConfig;
   onChange: (updates: Partial<ControllerConfig>) => void;
   stickSizePx: number;
   bodySizeLabel: string;
+  onClearSlot: (slot: "controllerSkin" | "leftStickSkin" | "rightStickSkin") => void;
 }
 
 interface UploadSlotProps {
@@ -107,10 +108,10 @@ const PS_STICKS: StickEntry[] = [
  *  type has a different body shape (no tabs to switch types; this section
  *  is strictly for the currently-selected controller's own body skins). */
 const CONTROLLER_BODY_LIBRARY: Record<ControllerType, LibraryEntry[]> = {
-  "xbox-one":  [{ id:"xbox-one-default",  name:"Default", url:"skins/xbox-one-base.png" }],
+  "c4d1":      [{ id:"c4d1-default",      name:"Default", url:"skins/c4d1-base.png" }],
   "c4d1-edge": [{ id:"c4d1-edge-default", name:"Default", url:"skins/c4d1-edge-base.png" }],
-  "ps4":       [{ id:"ps4-default",       name:"Default", url:"skins/ps4-base.png" }],
-  "ps5":       [{ id:"ps5-default",       name:"Default", url:"skins/ps5-base.png" }],
+  "c4d4":      [{ id:"c4d4-default",      name:"Default", url:"skins/c4d4-base.png" }],
+  "c4d5":      [{ id:"c4d5-default",      name:"Default", url:"skins/c4d5-base.png" }],
   "c4d5-edge": [{ id:"c4d5-edge-default", name:"Default", url:"skins/c4d5-edge-base.png" }],
 };
 
@@ -133,7 +134,25 @@ function StickLibraryPicker({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"c4d1" | "ps">(defaultTab);
-  const entries = tab === "c4d1" ? C4D1_STICKS : PS_STICKS;
+  const staticEntries = tab === "c4d1" ? C4D1_STICKS : PS_STICKS;
+  const section = tab === "c4d1" ? "stick-c4d1" : "stick-ps";
+
+  // Custom (user-added) sticks — real files under userData in Electron, so
+  // they survive rebuilds the same way custom controller-body library
+  // entries already do. Reloads whenever the tab switches, since each tab
+  // is its own library section.
+  const [customSticks, setCustomSticks] = useState<LibraryEntry[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    loadCustomLibrary(section).then(loaded => { if (!cancelled) setCustomSticks(loaded); });
+    return () => { cancelled = true; };
+  }, [section]);
+  const addStickToLibrary = useAddToLibrary(section, entry => setCustomSticks(prev => [...prev, entry]));
+  async function removeCustomStick(id: string) {
+    await removeFromCustomLibrary(section, id);
+    setCustomSticks(prev => prev.filter(e => e.id !== id));
+  }
+  const entries = [...staticEntries, ...customSticks];
 
   return (
     <div
@@ -182,25 +201,79 @@ function StickLibraryPicker({
               }}>{PS_STICKS.length}</span>
             </button>
           </div>
-          <button onClick={onClose}
-            style={{ background:"none", border:"none", color:"#888", cursor:"pointer", fontSize:22, lineHeight:1 }}>×</button>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <button onClick={addStickToLibrary.openPicker}
+              style={{ background:"none", border:"1px solid rgba(228,7,7,0.5)", color:"#e40707",
+                borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:11, fontWeight:600 }}>
+              ＋ Add to Library
+            </button>
+            <button onClick={onClose}
+              style={{ background:"none", border:"none", color:"#888", cursor:"pointer", fontSize:22, lineHeight:1 }}>×</button>
+          </div>
         </div>
+        <input ref={addStickToLibrary.inputRef} type="file" accept="image/*" className="hidden"
+          onChange={addStickToLibrary.handleFile} />
+
+        {/* Rename prompt — shown after picking a file, before it's actually saved */}
+        {addStickToLibrary.pendingDataUrl && (
+          <div style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(228,7,7,0.4)",
+            borderRadius:10, padding:10, display:"flex", flexDirection:"column", gap:8 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <img src={addStickToLibrary.pendingDataUrl} alt="New stick"
+                style={{ width:44, height:44, objectFit:"contain", flexShrink:0 }} />
+              <input autoFocus value={addStickToLibrary.nameDraft}
+                onChange={e => addStickToLibrary.setNameDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") addStickToLibrary.confirmAdd(); }}
+                placeholder="Name this stick"
+                style={{ flex:1, background:"rgba(0,0,0,0.4)", border:"1px solid rgba(255,255,255,0.15)",
+                  borderRadius:6, padding:"6px 8px", fontSize:12, color:"#fff", outline:"none" }} />
+            </div>
+            {addStickToLibrary.error && (
+              <span style={{ fontSize:10, color:"#f87171" }}>{addStickToLibrary.error}</span>
+            )}
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={addStickToLibrary.confirmAdd} disabled={addStickToLibrary.saving}
+                style={{ flex:1, background:"#e40707", border:"none", color:"#fff", borderRadius:6,
+                  padding:"7px 0", fontSize:12, fontWeight:700, cursor:"pointer",
+                  opacity: addStickToLibrary.saving ? 0.6 : 1 }}>
+                {addStickToLibrary.saving ? "Saving…" : "Add"}
+              </button>
+              <button onClick={addStickToLibrary.cancel}
+                style={{ background:"none", border:"1px solid rgba(255,255,255,0.2)", color:"#aaa",
+                  borderRadius:6, padding:"7px 14px", fontSize:12, cursor:"pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Grid */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:12, maxHeight:520, overflowY:"auto", paddingRight:4 }}>
           {entries.map(entry => (
-            <button key={entry.id} onClick={() => { onSelect(entry.url); onClose(); }}
-              style={{
-                background: current === entry.url ? "rgba(228,7,7,0.18)" : "rgba(255,255,255,0.05)",
-                border:`2px solid ${current === entry.url ? "#e40707" : "rgba(255,255,255,0.10)"}`,
-                borderRadius:10, padding:"10px 6px", cursor:"pointer",
-                display:"flex", flexDirection:"column", alignItems:"center", gap:8,
-                transition:"border-color 0.15s, background 0.15s",
-              }}>
-              <img src={entry.url} alt={entry.name}
-                style={{ width:84, height:84, objectFit:"contain" }} />
-              <span style={{ fontSize:10, color:"#aaa", textAlign:"center", lineHeight:1.3 }}>{entry.name}</span>
-            </button>
+            <div key={entry.id} style={{ position:"relative" }}>
+              <button onClick={() => { onSelect(entry.url); onClose(); }}
+                style={{
+                  width:"100%",
+                  background: current === entry.url ? "rgba(228,7,7,0.18)" : "rgba(255,255,255,0.05)",
+                  border:`2px solid ${current === entry.url ? "#e40707" : "rgba(255,255,255,0.10)"}`,
+                  borderRadius:10, padding:"10px 6px", cursor:"pointer",
+                  display:"flex", flexDirection:"column", alignItems:"center", gap:8,
+                  transition:"border-color 0.15s, background 0.15s",
+                }}>
+                <img src={entry.url} alt={entry.name}
+                  style={{ width:84, height:84, objectFit:"contain" }} />
+                <span style={{ fontSize:10, color:"#aaa", textAlign:"center", lineHeight:1.3 }}>{entry.name}</span>
+              </button>
+              {entry.id.startsWith("custom-") && (
+                <button onClick={(e) => { e.stopPropagation(); removeCustomStick(entry.id); }}
+                  title="Remove from library"
+                  style={{
+                    position:"absolute", top:4, right:4, width:18, height:18, lineHeight:"16px",
+                    borderRadius:"50%", background:"rgba(0,0,0,0.75)", border:"1px solid rgba(255,255,255,0.25)",
+                    color:"#ccc", fontSize:11, cursor:"pointer", padding:0,
+                  }}>×</button>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -278,7 +351,7 @@ function UploadSlot({ label, value, onUpload, onClear, hint, onOpenLibrary }: Up
 }
 
 /** Controller Body slot — supports PNG and WebM, with a popover for video settings. */
-function BodySlot({ config, onChange }: { config: ControllerConfig; onChange: (u: Partial<ControllerConfig>) => void }) {
+function BodySlot({ config, onChange, onClearSlot }: { config: ControllerConfig; onChange: (u: Partial<ControllerConfig>) => void; onClearSlot: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const isVideo = isVideoSkin(config.controllerSkin);
@@ -354,8 +427,8 @@ function BodySlot({ config, onChange }: { config: ControllerConfig; onChange: (u
                   </button>
                 </PopoverTrigger>
               )}
-              <button onClick={() => onChange({ controllerSkin: null })}
-                className="p-1 rounded-full bg-black/60 text-white hover:bg-destructive transition-colors" title="Remove skin">
+              <button onClick={onClearSlot}
+                className="p-1 rounded-full bg-black/60 text-white hover:bg-destructive transition-colors" title="Reset to default skin">
                 <X size={11} />
               </button>
             </div>
@@ -425,11 +498,11 @@ function BodySlot({ config, onChange }: { config: ControllerConfig; onChange: (u
 
 export { isVideoSkin };
 
-export function SkinPanel({ config, onChange, stickSizePx, bodySizeLabel }: Props) {
+export function SkinPanel({ config, onChange, stickSizePx, bodySizeLabel, onClearSlot }: Props) {
   const [showLeftLib,  setShowLeftLib]  = useState(false);
   const [showRightLib, setShowRightLib] = useState(false);
   const defaultTab: "c4d1" | "ps" =
-    (config.controllerType === "xbox-one" || config.controllerType === "c4d1-edge") ? "c4d1" : "ps";
+    (config.controllerType === "c4d1" || config.controllerType === "c4d1-edge") ? "c4d1" : "ps";
 
   return (
     <div className="flex flex-col gap-5 p-3">
@@ -438,7 +511,7 @@ export function SkinPanel({ config, onChange, stickSizePx, bodySizeLabel }: Prop
         <span className="text-sm font-semibold">Skins</span>
       </div>
 
-      <BodySlot config={config} onChange={onChange} />
+      <BodySlot config={config} onChange={onChange} onClearSlot={() => onClearSlot("controllerSkin")} />
 
       <div className="flex items-center justify-between gap-2 rounded-md bg-primary/10 border border-primary/20 px-2 py-1.5">
         <span className="text-[10px] font-semibold text-primary">Body PNG size</span>
@@ -450,7 +523,7 @@ export function SkinPanel({ config, onChange, stickSizePx, bodySizeLabel }: Prop
         value={config.leftStickSkin}
         hint="Square PNG, transparent bg"
         onUpload={(url) => onChange({ leftStickSkin: url })}
-        onClear={() => onChange({ leftStickSkin: null })}
+        onClear={() => onClearSlot("leftStickSkin")}
         onOpenLibrary={() => setShowLeftLib(true)}
       />
 
@@ -459,7 +532,7 @@ export function SkinPanel({ config, onChange, stickSizePx, bodySizeLabel }: Prop
         value={config.rightStickSkin}
         hint="Square PNG, transparent bg"
         onUpload={(url) => onChange({ rightStickSkin: url })}
-        onClear={() => onChange({ rightStickSkin: null })}
+        onClear={() => onClearSlot("rightStickSkin")}
         onOpenLibrary={() => setShowRightLib(true)}
       />
 

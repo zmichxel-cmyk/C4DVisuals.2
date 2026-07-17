@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Upload, Eraser, Paintbrush, Wand2, Undo2, RotateCcw, ZoomIn, ZoomOut, Image as ImageIcon, Square, Circle, Check, X, ArrowRightCircle, MousePointer, ChevronDown } from "lucide-react";
 import { ControllerType, CONTROLLER_TYPES } from "../lib/layouts";
 import { HomeButtonZone } from "../types/config";
-import { addToCustomLibrary } from "./LibraryPicker";
+import { addToCustomLibrary, loadCustomLibrary, removeFromCustomLibrary, useAddToLibrary, LibraryEntry } from "./LibraryPicker";
 
 type Tool = "select" | "wand" | "erase" | "restore" | "crop-rect" | "crop-circle";
 export type ExportSlot = "controllerSkin" | "leftStickSkin" | "rightStickSkin";
@@ -392,6 +392,22 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
   const [pickerBrightness, setPickerBrightness]  = useState(1);
   const [pickerContrast,   setPickerContrast]    = useState(1);
   const [pickerSaturate,   setPickerSaturate]    = useState(1);
+
+  // Custom (user-added) bezels — real files under userData in Electron, so
+  // they survive rebuilds the same way custom controller-body library
+  // entries already do.
+  const [customBezels, setCustomBezels] = useState<LibraryEntry[]>([]);
+  useEffect(() => {
+    if (!showBezelPicker) return;
+    let cancelled = false;
+    loadCustomLibrary("bezel").then(entries => { if (!cancelled) setCustomBezels(entries); });
+    return () => { cancelled = true; };
+  }, [showBezelPicker]);
+  const addBezelToLibrary = useAddToLibrary("bezel", entry => setCustomBezels(prev => [...prev, entry]));
+  async function removeCustomBezel(id: string) {
+    await removeFromCustomLibrary("bezel", id);
+    setCustomBezels(prev => prev.filter(e => e.id !== id));
+  }
 
   // Home button overlay
   const [homeButton,         setHomeButton]         = useState<HomeButtonState | null>(null);
@@ -1261,8 +1277,14 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
     if (selectedBezel === id) setSelectedBezel(null);
   }
 
-  function updateBezelAdj(id: number, adj: Partial<Pick<BezelInstance, "hue" | "brightness" | "contrast" | "saturate">>) {
-    setBezels(prev => prev.map(b => b.id === id ? { ...b, ...adj } : b));
+  /** Adds a second copy of an existing bezel — same image and same color
+   *  settings — so placing a matching pair doesn't mean reopening the
+   *  library and re-tuning hue/brightness/contrast/saturate from scratch. */
+  function duplicateBezel(bz: BezelInstance) {
+    if (bezels.length >= 2) return;
+    const id = bezelNextId.current++;
+    setBezels(prev => [...prev, { ...bz, id, x: bz.x + 24, y: bz.y + 24 }]);
+    setSelectedBezel(id);
   }
 
   // ── Home Button ────────────────────────────────────────────────────────────
@@ -2455,26 +2477,20 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
                     <button onClick={e => { e.stopPropagation(); removeBezel(bz.id); }}
                       className="text-muted-foreground hover:text-destructive transition-colors"><X size={11} /></button>
                   </div>
-                  <div className="border-t border-border bg-background/30 px-2 py-1.5 space-y-1.5">
-                    {[
-                      { label: "Hue",    value: bz.hue,        min: 0,    max: 360, step: 1,    key: "hue"        },
-                      { label: "Bright", value: bz.brightness, min: 0,    max: 3,   step: 0.05, key: "brightness" },
-                      { label: "Contr",  value: bz.contrast,   min: 0,    max: 3,   step: 0.05, key: "contrast"   },
-                      { label: "Sat",    value: bz.saturate,   min: 0,    max: 10,  step: 0.1,  key: "saturate"   },
-                    ].map(({ label, value, min, max, step, key }) => (
-                      <div key={key} className="flex items-center gap-1.5 min-w-0" onClick={e => e.stopPropagation()}>
-                        <span className="text-xs text-muted-foreground w-10 shrink-0">{label}</span>
-                        <input type="range" min={min} max={max} step={step} value={value}
-                          onChange={e => updateBezelAdj(bz.id, { [key]: Number(e.target.value) } as any)}
-                          className="min-w-0 flex-1 h-1 accent-primary" />
-                        {key === "hue"
-                          ? <span className="w-5 h-5 rounded shrink-0 border border-white/20 shadow-sm"
-                              style={{ background: `hsl(${value}, 100%, 50%)`, flexShrink: 0 }} />
-                          : <span className="text-xs text-muted-foreground w-7 text-right shrink-0 tabular-nums">{typeof value === "number" ? value.toFixed(1) : value}</span>
-                        }
-                      </div>
-                    ))}
-                  </div>
+                  {/* Color adjustment lives only in the library popover now —
+                      this used to duplicate those same sliders per placed
+                      bezel, which was redundant. Duplicating an existing
+                      bezel (below) carries its color settings over exactly,
+                      so a matching second bezel never needs re-tuning here. */}
+                  {selectedBezel === bz.id && (
+                    <div className="border-t border-border bg-background/30 px-2 py-1.5">
+                      <button onClick={e => { e.stopPropagation(); duplicateBezel(bz); }}
+                        disabled={bezels.length >= 2}
+                        className="w-full flex items-center justify-center gap-1 text-xs text-primary border border-primary/40 hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1 rounded transition-all font-medium">
+                        ＋ Add Another Like This
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -2589,28 +2605,82 @@ export function ImageEditor({ onExportToSkin, onClearSlot, onExportMkbSkin, onCl
                 <span style={{
                   fontSize:10, fontWeight:700, color:"#aaa",
                   background:"rgba(255,255,255,0.08)", borderRadius:999, padding:"1px 6px", lineHeight:1.4,
-                }}>{BEZEL_LIBRARY.length}</span>
+                }}>{BEZEL_LIBRARY.length + customBezels.length}</span>
               </div>
-              <button onClick={() => setShowBezelPicker(false)}
-                style={{ background:"none", border:"none", color:"#888", cursor:"pointer", fontSize:20, lineHeight:1 }}>×</button>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <button onClick={addBezelToLibrary.openPicker}
+                  style={{ background:"none", border:"1px solid rgba(228,7,7,0.5)", color:"#e40707",
+                    borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:10, fontWeight:600 }}>
+                  ＋ Add to Library
+                </button>
+                <button onClick={() => setShowBezelPicker(false)}
+                  style={{ background:"none", border:"none", color:"#888", cursor:"pointer", fontSize:20, lineHeight:1 }}>×</button>
+              </div>
             </div>
+            <input ref={addBezelToLibrary.inputRef} type="file" accept="image/*" className="hidden"
+              onChange={addBezelToLibrary.handleFile} />
+
+            {/* Rename prompt — shown after picking a file, before it's actually saved */}
+            {addBezelToLibrary.pendingDataUrl && (
+              <div style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(228,7,7,0.4)",
+                borderRadius:10, padding:10, display:"flex", flexDirection:"column", gap:8 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <img src={addBezelToLibrary.pendingDataUrl} alt="New bezel"
+                    style={{ width:40, height:40, objectFit:"contain", flexShrink:0 }} />
+                  <input autoFocus value={addBezelToLibrary.nameDraft}
+                    onChange={e => addBezelToLibrary.setNameDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") addBezelToLibrary.confirmAdd(); }}
+                    placeholder="Name this bezel"
+                    style={{ flex:1, background:"rgba(0,0,0,0.4)", border:"1px solid rgba(255,255,255,0.15)",
+                      borderRadius:6, padding:"5px 8px", fontSize:11, color:"#fff", outline:"none" }} />
+                </div>
+                {addBezelToLibrary.error && (
+                  <span style={{ fontSize:10, color:"#f87171" }}>{addBezelToLibrary.error}</span>
+                )}
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={addBezelToLibrary.confirmAdd} disabled={addBezelToLibrary.saving}
+                    style={{ flex:1, background:"#e40707", border:"none", color:"#fff", borderRadius:6,
+                      padding:"6px 0", fontSize:11, fontWeight:700, cursor:"pointer",
+                      opacity: addBezelToLibrary.saving ? 0.6 : 1 }}>
+                    {addBezelToLibrary.saving ? "Saving…" : "Add"}
+                  </button>
+                  <button onClick={addBezelToLibrary.cancel}
+                    style={{ background:"none", border:"1px solid rgba(255,255,255,0.2)", color:"#aaa",
+                      borderRadius:6, padding:"6px 12px", fontSize:11, cursor:"pointer" }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Bezel grid — scrollable, 3 columns */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, maxHeight:280, overflowY:"auto", paddingRight:4 }}>
-              {BEZEL_LIBRARY.map(b => (
-                <button key={b.id} onClick={() => setPickerUrl(b.url)}
-                  style={{
-                    background: pickerUrl === b.url ? "rgba(228,7,7,0.18)" : "rgba(255,255,255,0.05)",
-                    border:`2px solid ${pickerUrl === b.url ? "#e40707" : "rgba(255,255,255,0.10)"}`,
-                    borderRadius:10, padding:"8px 4px", cursor:"pointer",
-                    display:"flex", flexDirection:"column", alignItems:"center", gap:6,
-                    transition:"border-color 0.15s, background 0.15s",
-                  }}>
-                  <img src={b.url} alt={b.name}
-                    style={{ width:56, height:56, objectFit:"contain",
-                      filter:`hue-rotate(${pickerHue}deg) brightness(${pickerBrightness}) contrast(${pickerContrast}) saturate(${pickerSaturate})` }} />
-                  <span style={{ fontSize:8, color:"#aaa", textAlign:"center", lineHeight:1.3 }}>{b.name}</span>
-                </button>
+              {[...BEZEL_LIBRARY, ...customBezels].map(b => (
+                <div key={b.id} style={{ position:"relative" }}>
+                  <button onClick={() => setPickerUrl(b.url)}
+                    style={{
+                      width:"100%",
+                      background: pickerUrl === b.url ? "rgba(228,7,7,0.18)" : "rgba(255,255,255,0.05)",
+                      border:`2px solid ${pickerUrl === b.url ? "#e40707" : "rgba(255,255,255,0.10)"}`,
+                      borderRadius:10, padding:"8px 4px", cursor:"pointer",
+                      display:"flex", flexDirection:"column", alignItems:"center", gap:6,
+                      transition:"border-color 0.15s, background 0.15s",
+                    }}>
+                    <img src={b.url} alt={b.name}
+                      style={{ width:56, height:56, objectFit:"contain",
+                        filter:`hue-rotate(${pickerHue}deg) brightness(${pickerBrightness}) contrast(${pickerContrast}) saturate(${pickerSaturate})` }} />
+                    <span style={{ fontSize:8, color:"#aaa", textAlign:"center", lineHeight:1.3 }}>{b.name}</span>
+                  </button>
+                  {b.id.startsWith("custom-") && (
+                    <button onClick={(e) => { e.stopPropagation(); removeCustomBezel(b.id); }}
+                      title="Remove from library"
+                      style={{
+                        position:"absolute", top:2, right:2, width:16, height:16, lineHeight:"14px",
+                        borderRadius:"50%", background:"rgba(0,0,0,0.75)", border:"1px solid rgba(255,255,255,0.25)",
+                        color:"#ccc", fontSize:10, cursor:"pointer", padding:0,
+                      }}>×</button>
+                  )}
+                </div>
               ))}
             </div>
 
